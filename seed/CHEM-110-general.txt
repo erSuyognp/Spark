@@ -1,0 +1,7 @@
+CHEM 110 General Chemistry I
+Unit 1: Atomic structure and electron configuration
+Unit 2: Periodic trends - atomic radius, ionisation energy, electronegativity
+Unit 3: Chemical bonding - ionic, covalent, and molecular geometry
+Unit 4: Stoichiometry and limiting reagents
+Unit 5: Gas laws and the ideal gas equation
+Textbook: Zumdahl. Late policy: 10% per day.

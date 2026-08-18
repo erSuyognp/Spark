@@ -1,0 +1,7 @@
+PHYS 101 Introductory Mechanics
+Week 1-2: Kinematics in one and two dimensions, projectile motion
+Week 3-4: Newton's three laws, free-body diagrams, friction
+Week 5: Work, energy, and the work-energy theorem
+Week 6: Conservation of momentum and collisions
+Week 7: Rotational motion, torque, angular momentum
+Grading: 30% homework, 30% midterm, 40% final. Office hours Thursdays.

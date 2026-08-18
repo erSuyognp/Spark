@@ -12,6 +12,9 @@
 *.pem
 secrets.json
 
+# Seeder scratch
+.seed-bulk.json
+
 # Cloudflare / build
 .wrangler/
 dist/

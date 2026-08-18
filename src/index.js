@@ -18,6 +18,8 @@
  *   3. Per-IP rate limits, per minute and per day.
  */
 
+import { topicsKey, cardKey } from "./keys.js";
+
 const API_URL = "https://api.anthropic.com/v1/messages";
 const CARD_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
@@ -174,19 +176,6 @@ const json = (body, status = 200) =>
   });
 
 const fail = (message, status) => json({ error: message }, status);
-
-async function sha256(text) {
-  const bytes = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest))
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("")
-    .slice(0, 40);
-}
-
-// Collapse whitespace and case so trivially different wordings share a cache
-// entry. Deliberately conservative — it must not merge different courses.
-const normalize = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 
 const utcDay = () => new Date().toISOString().slice(0, 10);
 const utcMinute = () => new Date().toISOString().slice(0, 16);
@@ -392,7 +381,7 @@ async function handleTopics(env, body) {
   }
   const { level, course } = readCommon(body);
 
-  const key = `topics:${await sha256(normalize(syllabus) + "|" + level)}`;
+  const key = await topicsKey(syllabus, level);
   const hit = await env.SPARK_KV.get(key, "json");
   if (hit) return json({ ...hit, cached: true });
 
@@ -435,7 +424,7 @@ async function handleSpark(env, body) {
 
   // Keyed on the topic, not the syllabus — so two students whose syllabi are
   // worded differently but cover the same concept share one generated card.
-  const key = `cards:${await sha256(normalize(name) + "|" + normalize(gist) + "|" + level)}`;
+  const key = await cardKey(name, gist, level);
   const hit = await env.SPARK_KV.get(key, "json");
   if (hit) return json({ card: hit, cached: true });
 

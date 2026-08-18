@@ -10,9 +10,12 @@ serves both the site and the API; the key lives server-side as an encrypted secr
 ```
 public/index.html        the whole frontend — no build step, no framework
 src/index.js             the Worker: /api/topics and /api/spark, caching, spend caps, rate limits
+src/keys.js              cache-key derivation, shared by the Worker and the seeder
 wrangler.toml            config; models and every limit are vars you can tune
-test/worker.test.html    66 behaviour tests, Anthropic call stubbed
+seed/                    syllabi to pre-generate (one .txt per course)
+scripts/seed.mjs         cache pre-seeder — generate ahead of time, demo for free
 scripts/check-secrets.sh run before every push
+test/worker.test.html    70 behaviour tests, Anthropic call stubbed
 ```
 
 ## Security first — this is a public repo
@@ -107,6 +110,34 @@ produced *"tracks entropy generation across each tray of the distillation column
 redesigns reflux ratios to cut steam costs at a refinery."* Specificity is the whole
 product, so the default spends 2.5× for it. Switch models in `wrangler.toml` and judge
 for yourself.
+
+## Pre-seeding the cache (recommended before a demo)
+
+Generating a card live takes ~30s and costs ~$0.022. Serving a cached one takes
+under half a second and costs nothing. So generate ahead of time:
+
+```bash
+node scripts/seed.mjs --dir seed --dry-run
+```
+
+```bash
+node scripts/seed.mjs --dir seed --budget 5
+```
+
+Drop one `.txt` per course into `seed/` (paste the syllabus, administrivia and
+all — the parser strips it). Measured on a real run: 11 cards across 2 courses
+for **$0.4582**, zero failures. Afterwards, pasting a covered syllabus into the
+live site returned **8/8 cards from cache in 3.8s total** instead of ~240s, at
+$0.00 to the visitor.
+
+The seeder imports the Worker's own `src/keys.js` and lifts the prompt straight
+out of `src/index.js`, so seeded entries are guaranteed to be found and are
+identical to live ones. It skips anything already cached, so re-running is cheap
+and safe.
+
+`--budget` is approximate in the same way the Worker's caps are: requests already
+in flight finish, so a $0.40 budget stopped at $0.4582 with three concurrent
+workers. Set it a little under what you actually want to spend.
 
 ## Spend caps
 

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "seed": "node scripts/seed.mjs"
   },
   "devDependencies": {
     "wrangler": "^4"
@@ -14,5 +15,6 @@
   "allowScripts": {
     "esbuild@0.28.1": true,
     "workerd@1.20260815.1": true
-  }
+  },
+  "type": "module"
 }
