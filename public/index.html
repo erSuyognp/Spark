@@ -182,6 +182,23 @@
   .vanish{font-size:15px;font-family:var(--serif);font-style:italic}
   .cardfoot{display:flex;gap:8px;padding:0 22px 18px;flex-wrap:wrap}
 
+  /* discover / gallery */
+  #discover{display:none}
+  #discover.on{display:block}
+  .gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-top:14px}
+  .galcard{
+    border:1px solid var(--line);border-radius:11px;padding:13px 15px;background:var(--bg);
+    text-align:left;transition:.15s;cursor:pointer;display:block;width:100%
+  }
+  .galcard:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .galcard .gc{font-weight:600;font-size:14px;margin-bottom:5px;line-height:1.3}
+  .galcard .gt{font-size:12.5px;color:var(--muted);line-height:1.45}
+  .galcard .gn{
+    font-family:var(--mono);font-size:10.5px;color:var(--accent);
+    text-transform:uppercase;letter-spacing:.07em;margin-top:8px
+  }
+  .galempty{color:var(--muted);font-size:13.5px;font-style:italic;padding:6px 0}
+
   footer{margin:50px 0 60px;color:var(--muted);font-size:13px;text-align:center;line-height:1.7}
 
   #lecture{
@@ -270,6 +287,17 @@
     Popular courses are cached, so a syllabus someone already sparked comes back instantly —
     and the three samples above are pre-written and always free.
   </p>
+</section>
+
+<section class="panel" id="discover">
+  <h2>Discover — what others are learning</h2>
+  <p class="hint" style="margin:0">
+    Every syllabus sparked here is added to this list. Open one and it loads instantly,
+    because the cards are already generated. Only the course name and its topics are shown —
+    the syllabus text people paste is never stored or published.
+  </p>
+  <div class="gal" id="gal"></div>
+  <div class="galempty" id="galEmpty" hidden>Nothing here yet — be the first to spark a syllabus.</div>
 </section>
 
 <section class="panel" id="pipeline">
@@ -1061,6 +1089,7 @@ async function run(){
     const good = results.filter(r => r && r.card).length;
     const cachedCount = results.filter(r => r && r.cached).length;
     const soft = results.find(r => r && r.soft);
+    if(good) loadGallery();   // the course just sparked belongs in Discover
 
     if(good){
       setStatus(good + " topics sparked" + (cachedCount ? " (" + cachedCount + " from cache)" : "") + ".");
@@ -1104,6 +1133,84 @@ function runDemo(key){
       }, 420 * (i + 1));
     });
   }, 500);
+}
+
+/* ============================================================
+   Discover — the public gallery of what others have sparked.
+   ============================================================ */
+
+async function loadGallery(){
+  let data;
+  try{
+    const res = await fetch("/api/gallery");
+    if(!res.ok) return;
+    data = await res.json();
+  }catch(_){ return; }   // gallery is optional; never block the page on it
+
+  const courses = (data && data.courses) || [];
+  const wrap = $("gal");
+  $("discover").classList.add("on");
+
+  if(!courses.length){ $("galEmpty").hidden = false; wrap.innerHTML = ""; return; }
+  $("galEmpty").hidden = true;
+
+  wrap.innerHTML = courses.map((c, i) => {
+    const names = (c.topics || []).map(t => t.name);
+    const shown = names.slice(0, 3).join(" · ");
+    const more = names.length > 3 ? " +" + (names.length - 3) + " more" : "";
+    return '<button class="galcard" data-i="' + i + '">' +
+             '<div class="gc">' + esc(c.course) + '</div>' +
+             '<div class="gt">' + esc(shown) + esc(more) + '</div>' +
+             '<div class="gn">' + names.length + ' topics · ' + esc(c.level || "") + '</div>' +
+           '</button>';
+  }).join("");
+
+  wrap.querySelectorAll(".galcard").forEach(btn => {
+    btn.addEventListener("click", () => openFromGallery(courses[+btn.dataset.i]));
+  });
+}
+
+/* Opening a gallery course skips stage 1 entirely — the topics are already
+   known, so it goes straight to fetching cards, which are normally cached
+   and return in well under a second. */
+async function openFromGallery(entry){
+  resetFeed();
+  $("pipeline").classList.add("on");
+  $("goBtn").disabled = true;
+  $("course").value = entry.course || "";
+  if(entry.level) $("level").value = entry.level;
+  setStatus("Opening " + (entry.course || "course") + "…");
+
+  const topics = entry.topics || [];
+  $("tasks1").innerHTML = taskChip(topics.length + " topics found", "cached");
+  $("tasks2").innerHTML = topics.map(t => taskChip(t.name, "run")).join("");
+
+  const results = new Array(topics.length).fill(null);
+  await pool(topics, CONCURRENCY, async (topic, idx) => {
+    try{
+      const out = await api("/api/spark", { topic, course: entry.course, level: entry.level });
+      results[idx] = { card: out.card, cached: !!out.cached };
+    }catch(err){
+      results[idx] = { error: err.message };
+    }
+    $("tasks2").innerHTML = topics.map((t, i) => {
+      const r = results[i];
+      if(!r) return taskChip(t.name, "run");
+      if(r.error) return taskChip(t.name, "err");
+      return taskChip(t.name, r.cached ? "cached" : "done");
+    }).join("");
+
+    while(CARDS.length < results.length && results[CARDS.length]){
+      const r = results[CARDS.length];
+      if(r.error){ CARDS.push({ __skipped:true }); } else { addCard(r.card); }
+    }
+  });
+
+  const good = results.filter(r => r && r.card).length;
+  const cached = results.filter(r => r && r.cached).length;
+  setStatus(good + " topics" + (cached === good && good ? " — all from cache, instantly" : ""));
+  $("goBtn").disabled = false;
+  document.getElementById("feed").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 /* ============================================================
@@ -1198,6 +1305,8 @@ $("themeBtn").addEventListener("click", () => {
   document.documentElement.dataset.theme = next;
   localStorage.setItem("spark.theme", next);
 });
+
+loadGallery();
 </script>
 </body>
 </html>

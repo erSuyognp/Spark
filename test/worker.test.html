@@ -19,6 +19,7 @@
 /* Imports the real src/index.js. Served over http://localhost so ES module
    imports resolve and crypto.subtle is available (secure context). */
 import worker from "../src/index.js";
+import { topicsKey } from "../src/keys.js";
 
 const out = document.getElementById("out");
 let pass = 0, fail = 0;
@@ -42,7 +43,11 @@ function makeKV(){
       if(v === undefined) return null;
       return type === "json" ? JSON.parse(v) : v;
     },
-    async put(key, val){ m.set(key, val); }
+    async put(key, val){ m.set(key, val); },
+    async list({ prefix = "", limit = 1000 } = {}){
+      const keys = [...m.keys()].filter(k => k.startsWith(prefix)).slice(0, limit);
+      return { keys: keys.map(name => ({ name })), list_complete: true };
+    }
   };
 }
 
@@ -285,6 +290,61 @@ function stubReq(path, body, origin){
   nextResponse = new Response(JSON.stringify({ stop_reason:"end_turn", content:[{type:"thinking",thinking:""}] }), { status:200 });
   r = await hit("/api/spark", { topic:{ name:"R5", gist:"g" } }, env);
   check("a response with no text block errors cleanly", r.status === 502, String(r.status));
+}
+
+/* ============================================================
+   Public gallery
+   ============================================================ */
+{
+  const env = baseEnv();
+
+  // Empty to start.
+  let r = await worker.fetch(new Request("https://spark.test/api/gallery", { method: "GET" }), env);
+  let j = await r.json();
+  check("GET /api/gallery works", r.status === 200, String(r.status));
+  check("an empty gallery returns an empty list, not an error",
+    Array.isArray(j.courses) && j.courses.length === 0, JSON.stringify(j).slice(0, 80));
+
+  // Sparking a syllabus should publish the course.
+  await hit("/api/topics", { syllabus: LONG, level: "Graduate" }, env);
+  env.SPARK_KV._m.delete("gallery-cache");            // bypass the 60s assembled cache
+  r = await worker.fetch(new Request("https://spark.test/api/gallery", { method: "GET" }), env);
+  j = await r.json();
+  check("a sparked syllabus appears in the gallery", j.courses.length === 1, JSON.stringify(j.courses).slice(0, 90));
+  check("the gallery publishes the course name", j.courses[0].course === "C", j.courses[0].course);
+  check("the gallery publishes the topic list", j.courses[0].topics.length === 2, String(j.courses[0].topics.length));
+
+  // The privacy guarantee: the pasted syllabus must never be published.
+  const serialised = JSON.stringify(j.courses);
+  check("the raw syllabus text is NOT published in the gallery",
+    !serialised.includes("Thermodynamics, entropy, heat engines"), "LEAKED the pasted syllabus");
+  check("no syllabus field exists on a gallery entry",
+    j.courses[0].syllabus === undefined, "syllabus field present");
+
+  // Re-sparking the same course must not create a duplicate entry.
+  env.SPARK_KV._m.delete(await topicsKey(LONG, "Graduate"));
+  await hit("/api/topics", { syllabus: LONG, level: "Graduate" }, env);
+  env.SPARK_KV._m.delete("gallery-cache");
+  r = await worker.fetch(new Request("https://spark.test/api/gallery", { method: "GET" }), env);
+  j = await r.json();
+  check("re-sparking the same course does not duplicate the gallery entry",
+    j.courses.length === 1, String(j.courses.length));
+
+  // Read-only, so it must survive the two conditions that disable generation.
+  const noKey = baseEnv(); delete noKey.ANTHROPIC_API_KEY;
+  await noKey.SPARK_KV.put("gallery:x", JSON.stringify({ course: "K", level: "L", topics: [{ name: "n", gist: "g" }], createdAt: 1 }));
+  r = await worker.fetch(new Request("https://spark.test/api/gallery", { method: "GET" }), noKey);
+  j = await r.json();
+  check("the gallery still works with no API key configured",
+    r.status === 200 && j.courses.length === 1, r.status + " " + j.courses.length);
+
+  const broke = baseEnv(); broke.MAX_SPEND_USD_TOTAL = "0";
+  await broke.SPARK_KV.put("gallery:y", JSON.stringify({ course: "B", level: "L", topics: [{ name: "n", gist: "g" }], createdAt: 1 }));
+  r = await worker.fetch(new Request("https://spark.test/api/gallery", { method: "GET" }), broke);
+  check("the gallery still works after the spend cap is exhausted", r.status === 200, String(r.status));
+
+  r = await hit("/api/gallery", {}, baseEnv());
+  check("POST to the gallery is rejected", r.status === 405, String(r.status));
 }
 
 /* ============================================================

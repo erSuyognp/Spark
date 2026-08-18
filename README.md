@@ -58,6 +58,27 @@ Each card carries seven parts: the hook, tempting wrong answers, progressive hin
 reveal, where it already touches your life, where it pays the bills, a build-it-this-week
 experiment, and what breaks in the world if nobody had worked it out.
 
+## Discover — learning from what others found
+
+Every syllabus sparked on the site is added to a public **Discover** list. Open any course
+and it loads instantly, because the cards are already generated — so one student's curiosity
+becomes free for everyone after them.
+
+**What is published:** the model-generated course name and its topic list.
+**What is never published:** the syllabus text anyone pasted.
+
+That second line is a deliberate constraint, not an oversight. Real syllabi carry instructor
+names, section numbers, room assignments, and sometimes the student's own details — none of
+which belong on a public page. The Worker stores only the generated course name and topics,
+and there is a test asserting that raw syllabus text never reaches the gallery.
+
+The gallery is read-only, so it needs no API key, costs nothing to serve, and keeps working
+after the spend cap is reached — discovery is the part of the site that should never go dark.
+
+```
+GET /api/gallery   ->   { courses: [{ course, level, topics[] }], cached }
+```
+
 ## The one design decision that matters
 
 **Everything stays locked until you commit to a guess.**
@@ -107,8 +128,9 @@ public/index.html          the whole frontend
 src/index.js               the Worker: API, caching, spend caps, rate limits
 src/keys.js                cache-key derivation, shared by Worker and seeder
 scripts/seed.mjs           pre-generate cards so demos are instant and free
+scripts/backfill-gallery.mjs  publish already-generated courses to Discover
 scripts/check-secrets.sh   run before every push
-test/worker.test.html      70 assertions, Anthropic call stubbed
+test/worker.test.html      81 assertions, Anthropic call stubbed
 seed/                      syllabi to pre-generate, one .txt per course
 ```
 
@@ -250,12 +272,13 @@ bash scripts/check-secrets.sh
 python -m http.server 8791
 ```
 
-Open `http://localhost:8791/test/worker.test.html` — **70 assertions** against the real
+Open `http://localhost:8791/test/worker.test.html` — **81 assertions** against the real
 `src/index.js` with `fetch` and KV stubbed. `localhost` matters: the tests need a secure
 context for `crypto.subtle` and a real origin for ES module imports.
 
 Covered: routing and validation, cache keying and hits, dollar caps, per-IP limits, the
-truncation fallback ladder, and that an upstream error body is never forwarded to the browser.
+truncation fallback ladder, the Discover gallery (including that raw syllabus text is never
+published), and that an upstream error body is never forwarded to the browser.
 
 ## Known behaviour
 
@@ -277,7 +300,7 @@ truncation fallback ladder, and that an upstream error body is never forwarded t
 ## Roadmap
 
 - Seed a full course catalogue so nearly every paste is instant
-- Let students save and share a card set for a course
+- Let students upvote the hooks that actually made something click
 - A teacher view that exports lecture openers straight to slides
 - Difficulty calibration from which options students actually pick
 

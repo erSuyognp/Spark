@@ -18,10 +18,12 @@
  *   3. Per-IP rate limits, per minute and per day.
  */
 
-import { topicsKey, cardKey } from "./keys.js";
+import { topicsKey, cardKey, galleryKey } from "./keys.js";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
 const CARD_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const GALLERY_MAX = 60;        // courses shown in the public gallery
+const GALLERY_CACHE_SECONDS = 60;
 
 // USD per million tokens, [input, output]. Used to meter real spend against
 // the budget cap — update these if Anthropic's prices change.
@@ -358,6 +360,53 @@ async function callClaude(env, opts) {
 }
 
 /* ============================================================
+   Public gallery — what other people have sparked.
+
+   Only the model-generated course name and topic list are published.
+   The raw syllabus a visitor pasted is never stored or shown: syllabi
+   routinely carry instructor names, section numbers, and occasionally
+   the student's own details, none of which belong on a public page.
+   ============================================================ */
+
+async function recordInGallery(env, course, topics, level) {
+  if (!course || !topics || !topics.length) return;
+  try {
+    const entry = {
+      course,
+      level,
+      topics: topics.map((t) => ({ name: t.name, gist: t.gist })),
+      createdAt: Date.now()
+    };
+    await env.SPARK_KV.put(await galleryKey(course, level), JSON.stringify(entry),
+      { expirationTtl: CARD_TTL_SECONDS });
+  } catch (err) {
+    // The gallery is a nice-to-have; never fail a generation because of it.
+    console.error("gallery write failed", err && err.message);
+  }
+}
+
+async function handleGallery(env) {
+  // Assembling the gallery costs one KV read per course, so the assembled
+  // result is cached briefly. Note the key uses a hyphen, not a colon, so it
+  // is never picked up by the "gallery:" prefix listing below.
+  const hit = await env.SPARK_KV.get("gallery-cache", "json");
+  if (hit) return json({ courses: hit, cached: true });
+
+  const listed = await env.SPARK_KV.list({ prefix: "gallery:", limit: 200 });
+  const entries = await Promise.all(
+    listed.keys.map((k) => env.SPARK_KV.get(k.name, "json").catch(() => null))
+  );
+  const courses = entries
+    .filter((e) => e && e.course && e.topics && e.topics.length)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    .slice(0, GALLERY_MAX);
+
+  await env.SPARK_KV.put("gallery-cache", JSON.stringify(courses),
+    { expirationTtl: GALLERY_CACHE_SECONDS });
+  return json({ courses, cached: false });
+}
+
+/* ============================================================
    Handlers
    ============================================================ */
 
@@ -411,6 +460,7 @@ async function handleTopics(env, body) {
   if (!result.topics.length) return fail("Couldn't find any teachable topics in that text.", 422);
 
   await env.SPARK_KV.put(key, JSON.stringify(result), { expirationTtl: CARD_TTL_SECONDS });
+  await recordInGallery(env, result.course, result.topics, level);
   return json({ ...result, cached: false });
 }
 
@@ -464,12 +514,6 @@ export default {
     if (!url.pathname.startsWith("/api/")) {
       return new Response("Not found", { status: 404 });
     }
-    if (request.method !== "POST") {
-      return fail("Use POST.", 405);
-    }
-    if (!env.ANTHROPIC_API_KEY) {
-      return fail("This site isn't configured with an API key yet. The sample courses still work.", 503);
-    }
 
     // Same-origin only. The frontend ships from this same Worker, so no CORS
     // headers are needed — and omitting them stops other sites from building
@@ -483,6 +527,28 @@ export default {
       } catch (_) {
         return fail("Bad origin header.", 403);
       }
+    }
+
+    // The gallery is read-only: it needs no API key, costs nothing to serve,
+    // and must keep working after the spend cap is reached — discovery is the
+    // part of the site that should never go dark. It also skips the rate
+    // limiter, whose counters are KV *writes* and far more expensive than the
+    // cached read this performs.
+    if (url.pathname === "/api/gallery") {
+      if (request.method !== "GET") return fail("Use GET.", 405);
+      try {
+        return await handleGallery(env);
+      } catch (err) {
+        console.error("gallery read failed", err && err.stack ? err.stack : err);
+        return json({ courses: [], cached: false });
+      }
+    }
+
+    if (request.method !== "POST") {
+      return fail("Use POST.", 405);
+    }
+    if (!env.ANTHROPIC_API_KEY) {
+      return fail("This site isn't configured with an API key yet. The sample courses still work.", 503);
     }
 
     let body;

@@ -20,7 +20,7 @@
 import { readFile, readdir, writeFile, unlink } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { topicsKey, cardKey } from "../src/keys.js";
+import { topicsKey, cardKey, galleryKey } from "../src/keys.js";
 
 const run = promisify(execFile);
 
@@ -179,6 +179,13 @@ for (const f of files) {
 
   const topics = (parsed.topics || []).slice(0, 8);
   entries.push({ key: tKey, value: { course: parsed.course, topics } });
+  // Publish to the Discover gallery. Only the course name and topic list —
+  // never the syllabus text itself.
+  entries.push({
+    key: await galleryKey(parsed.course, LEVEL),
+    value: { course: parsed.course, level: LEVEL,
+             topics: topics.map((t) => ({ name: t.name, gist: t.gist })), createdAt: Date.now() }
+  });
   console.log("   " + topics.length + " topics   (" + usd(spentMicros) + " so far)");
 
   await pool(topics, CONC, async (t) => {

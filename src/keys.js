@@ -33,3 +33,13 @@ export const topicsKey = async (syllabus, level) =>
  *  share one card. This is what makes pre-seeding worthwhile. */
 export const cardKey = async (name, gist, level) =>
   `cards:${await sha256(normalize(name) + "|" + normalize(gist) + "|" + level)}`;
+
+/** A public gallery entry, keyed by course name so regenerating the same course
+ *  updates one entry instead of filling the gallery with near-duplicates.
+ *
+ *  Note what a gallery entry deliberately does NOT contain: the raw syllabus
+ *  text a visitor pasted. Syllabi carry instructor names, section numbers, and
+ *  sometimes the student's own details. Only the model-generated course name and
+ *  topic list are published. */
+export const galleryKey = async (course, level) =>
+  `gallery:${await sha256(normalize(course) + "|" + level)}`;
