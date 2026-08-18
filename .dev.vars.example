@@ -1,0 +1,6 @@
+# Copy this file to .dev.vars and paste your real key in.
+# .dev.vars is gitignored. NEVER commit the real key.
+#
+# For production, do NOT use this file — store the key encrypted in Cloudflare:
+#     npx wrangler secret put ANTHROPIC_API_KEY
+ANTHROPIC_API_KEY=sk-ant-api03-REPLACE-ME

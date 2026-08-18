@@ -1,0 +1,45 @@
+name = "spark"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+# The Worker serves the static site AND the API from one deploy, so the
+# frontend calls /api/* on its own origin — no CORS, no second service.
+# Static files are matched first; anything that isn't a file (i.e. /api/*)
+# falls through to src/index.js.
+[assets]
+directory = "./public"
+
+# Holds cards, parsed topic lists, rate-limit counters, and the running spend
+# total. Create it with:  npx wrangler kv namespace create SPARK_KV
+# then paste the printed id below. This id is NOT a secret — it is safe to
+# commit, and Cloudflare's own docs check it in.
+[[kv_namespaces]]
+binding = "SPARK_KV"
+id = "aaa3886ae5ee4201b7bc1cf2b56a6c7e"
+
+[vars]
+# Two stages, two models. Topic extraction is mechanical parsing, so it runs
+# on the cheap model; the card is the product, so it runs on the better one.
+# Measured on a real card (see README): Haiku $0.011, Sonnet 5 $0.028.
+# Set MODEL_CARDS to claude-haiku-4-5 to roughly triple your runway — the
+# README shows the side-by-side quality difference before you do.
+MODEL_TOPICS = "claude-haiku-4-5"
+MODEL_CARDS = "claude-sonnet-5"
+
+# Ignored on Haiku, which rejects the effort parameter outright.
+CARD_EFFORT = "medium"
+
+# Hard spend ceilings in USD, metered from the token usage the API actually
+# reports back — not estimates. MAX_SPEND_USD_TOTAL is a lifetime cap across
+# the whole deployment; keep it below your prepaid balance so a bug or a
+# viral link can never spend the lot.
+MAX_SPEND_USD_TOTAL = "20"
+MAX_SPEND_USD_DAY = "5"
+
+# Per-IP limits. One syllabus is roughly 1 + (number of topics) requests.
+RATE_LIMIT_PER_MINUTE = "40"
+RATE_LIMIT_PER_DAY = "150"
+
+# The API key is NOT set here — it would end up in git.
+# Store it encrypted in Cloudflare instead:
+#   npx wrangler secret put ANTHROPIC_API_KEY

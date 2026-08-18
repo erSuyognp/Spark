@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Spark worker tests</title>
+<style>
+  body{font:14px/1.5 ui-monospace,Consolas,monospace;background:#141311;color:#efece4;padding:24px}
+  .pass{color:#4ade80} .fail{color:#f87171;font-weight:700}
+  h1{font:600 18px system-ui;margin:0 0 16px}
+  #sum{margin-top:18px;padding:12px;border:1px solid #302e29;border-radius:8px}
+</style>
+</head>
+<body>
+<h1>Spark worker — behaviour tests (Anthropic call stubbed)</h1>
+<div id="out"></div>
+<div id="sum">running…</div>
+
+<script type="module">
+/* Imports the real src/index.js. Served over http://localhost so ES module
+   imports resolve and crypto.subtle is available (secure context). */
+import worker from "../src/index.js";
+
+const out = document.getElementById("out");
+let pass = 0, fail = 0;
+
+function check(name, cond, detail){
+  const ok = !!cond;
+  ok ? pass++ : fail++;
+  const div = document.createElement("div");
+  div.className = ok ? "pass" : "fail";
+  div.textContent = (ok ? "  PASS  " : "  FAIL  ") + name + (ok || !detail ? "" : "  → " + detail);
+  out.appendChild(div);
+}
+
+/* ---------- fake KV, matching the subset the worker uses ---------- */
+function makeKV(){
+  const m = new Map();
+  return {
+    _m: m,
+    async get(key, type){
+      const v = m.get(key);
+      if(v === undefined) return null;
+      return type === "json" ? JSON.parse(v) : v;
+    },
+    async put(key, val){ m.set(key, val); }
+  };
+}
+
+/* ---------- stub upstream ---------- */
+let calls = [];
+let nextResponse = null;
+let responseQueue = [];
+
+const CARD = {
+  topic:"T", one_line:"L",
+  hook:{ question:"Q", why_it_bites:"W",
+    options:[{text:"a",correct:true,note:"n"}], hints:["h"], reveal:"R" },
+  everyday:[{title:"t",detail:"d"}],
+  industry:[{sector:"s",role:"r",how:"h"}],
+  build_it:{title:"b",needs:["n"],steps:["s"]},
+  if_it_vanished:"v"
+};
+const TOPICS = { course:"C", topics:[{name:"Topic One",gist:"g1"},{name:"Topic Two",gist:"g2"}] };
+
+function okBody(payload, extra){
+  // Thinking block first, on purpose: the worker must not index content[0].
+  return Object.assign({
+    stop_reason: "end_turn",
+    content: [
+      { type: "thinking", thinking: "" },
+      { type: "text", text: JSON.stringify(payload) }
+    ],
+    // Sized so one card costs ~$1.00 on Sonnet 5 pricing (2/10 per MTok),
+    // making the dollar caps easy to reason about in tests.
+    usage: { input_tokens: 1000, output_tokens: 100000,
+             cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+  }, extra || {});
+}
+
+globalThis.fetch = async (url, init) => {
+  calls.push({ url: String(url), body: JSON.parse(init.body), headers: init.headers });
+  if(responseQueue.length) return responseQueue.shift();
+  if(nextResponse) { const r = nextResponse; nextResponse = null; return r; }
+  const body = calls[calls.length - 1].body;
+  const isTopics = /Pull out the distinct teachable concepts/.test(body.messages[0].content);
+  return new Response(JSON.stringify(okBody(isTopics ? TOPICS : CARD)), { status: 200 });
+};
+
+/* ---------- helpers ---------- */
+const baseEnv = () => ({
+  ANTHROPIC_API_KEY: "sk-test",
+  SPARK_KV: makeKV(),
+  MODEL_TOPICS: "claude-haiku-4-5",
+  MODEL_CARDS: "claude-sonnet-5",
+  CARD_EFFORT: "medium",
+  MAX_SPEND_USD_TOTAL: "1000",
+  MAX_SPEND_USD_DAY: "1000",
+  RATE_LIMIT_PER_MINUTE: "1000",
+  RATE_LIMIT_PER_DAY: "1000"
+});
+
+function req(path, body, opts = {}){
+  return new Request("https://spark.test" + path, {
+    method: opts.method || "POST",
+    headers: Object.assign({ "content-type":"application/json", "cf-connecting-ip":"1.2.3.4" }, opts.headers || {}),
+    body: opts.raw !== undefined ? opts.raw : (body === undefined ? undefined : JSON.stringify(body))
+  });
+}
+const hit = (path, body, env, opts) => worker.fetch(req(path, body, opts), env);
+const LONG = "Unit 1: Thermodynamics, entropy, heat engines and the Carnot cycle in detail.";
+
+/* `Origin` is a forbidden header name — the browser strips it from anything
+   built with `new Request()`, so the real header never reaches the worker.
+   This stub carries only the surface worker.fetch actually touches
+   (url, method, headers.get, json) so the origin branch can be exercised. */
+function stubReq(path, body, origin){
+  const h = { origin, "cf-connecting-ip": "1.2.3.4", "content-type": "application/json" };
+  return {
+    url: "https://spark.test" + path,
+    method: "POST",
+    headers: { get: (k) => { const v = h[String(k).toLowerCase()]; return v === undefined ? null : v; } },
+    json: async () => body
+  };
+}
+
+/* ============================================================
+   Routing / input validation
+   ============================================================ */
+{
+  const env = baseEnv();
+
+  let r = await worker.fetch(req("/api/topics", null, { method:"GET", raw:null }), env);
+  check("GET on an API route is 405", r.status === 405, "got " + r.status);
+
+  r = await hit("/notapi", {}, env);
+  check("non-API path is 404", r.status === 404, "got " + r.status);
+
+  r = await hit("/api/nope", { syllabus: LONG }, env);
+  check("unknown API endpoint is 404", r.status === 404, "got " + r.status);
+
+  r = await hit("/api/topics", undefined, env, { raw: "{not json" });
+  check("malformed JSON body is 400", r.status === 400, "got " + r.status);
+
+  r = await hit("/api/topics", { syllabus: "too short" }, env);
+  check("syllabus under 20 chars is 400", r.status === 400, "got " + r.status);
+
+  r = await hit("/api/spark", { topic: { gist: "x" } }, env);
+  check("spark with no topic name is 400", r.status === 400, "got " + r.status);
+
+  r = await worker.fetch(stubReq("/api/topics", { syllabus: LONG }, "https://evil.example"), env);
+  check("cross-origin request is 403", r.status === 403, "got " + r.status);
+
+  r = await worker.fetch(stubReq("/api/topics", { syllabus: LONG }, "https://spark.test"), env);
+  check("same-origin request is allowed", r.status === 200, "got " + r.status);
+
+  r = await worker.fetch(stubReq("/api/topics", { syllabus: LONG }, "not-a-url"), env);
+  check("unparseable origin header is rejected, not crashed on", r.status === 403, "got " + r.status);
+
+  r = await worker.fetch(stubReq("/api/topics", { syllabus: LONG }, undefined), env);
+  check("absent origin header is allowed (same-origin fetch, curl, etc.)", r.status === 200, "got " + r.status);
+
+  const noKey = baseEnv(); delete noKey.ANTHROPIC_API_KEY;
+  r = await hit("/api/topics", { syllabus: LONG }, noKey);
+  const j = await r.json();
+  check("missing API key is 503 and says samples still work",
+    r.status === 503 && /sample/i.test(j.error), r.status + " " + j.error);
+}
+
+/* ============================================================
+   Happy paths + caching
+   ============================================================ */
+{
+  const env = baseEnv();
+  calls = [];
+
+  let r = await hit("/api/topics", { syllabus: LONG, level: "Graduate" }, env);
+  let j = await r.json();
+  check("topics returns 200 with a topic list", r.status === 200 && j.topics.length === 2, JSON.stringify(j).slice(0,120));
+  check("first topics call reports cached:false", j.cached === false, String(j.cached));
+  check("one upstream call made", calls.length === 1, String(calls.length));
+
+  // Same syllabus with different whitespace/case must hit the same cache entry.
+  r = await hit("/api/topics", { syllabus: "  UNIT 1:   Thermodynamics, ENTROPY, heat engines and the Carnot cycle in detail.  ", level: "Graduate" }, env);
+  j = await r.json();
+  check("re-parsing the same syllabus (different case/spacing) is a cache hit", j.cached === true, String(j.cached));
+  check("cache hit made no upstream call", calls.length === 1, String(calls.length));
+
+  // A different level is a different cache entry.
+  r = await hit("/api/topics", { syllabus: LONG, level: "High school" }, env);
+  j = await r.json();
+  check("changing level misses the cache", j.cached === false, String(j.cached));
+
+  calls = [];
+  r = await hit("/api/spark", { topic: { name: "Entropy", gist: "second law" }, level: "Graduate" }, env);
+  j = await r.json();
+  check("spark returns 200 with a card", r.status === 200 && j.card.hook.question === "Q", JSON.stringify(j).slice(0,120));
+  check("worker skips the leading thinking block to find the text block", j.card.topic === "T", j.card.topic);
+  check("first spark call reports cached:false", j.cached === false, String(j.cached));
+
+  r = await hit("/api/spark", { topic: { name: "Entropy", gist: "second law" }, level: "Graduate", course: "A TOTALLY DIFFERENT COURSE" }, env);
+  j = await r.json();
+  check("same topic from a different course is a cache hit (topic-keyed, not syllabus-keyed)",
+    j.cached === true, String(j.cached));
+  check("card cache hit made no upstream call", calls.length === 1, String(calls.length));
+}
+
+/* ============================================================
+   Request shape sent upstream
+   ============================================================ */
+{
+  const env = baseEnv();
+  calls = [];
+  await hit("/api/spark", { topic: { name: "X", gist: "y" }, level: "Bogus level" }, env);
+  const b = calls[0].body;
+
+  check("cards use the MODEL_CARDS var", b.model === "claude-sonnet-5", b.model);
+  check("system is array form", Array.isArray(b.system), typeof b.system);
+  check("system carries an ephemeral cache breakpoint",
+    b.system[0].cache_control && b.system[0].cache_control.type === "ephemeral",
+    JSON.stringify(b.system[0].cache_control));
+  check("system prompt is long enough to exceed the 512-token cache minimum",
+    b.system[0].text.length > 2500, b.system[0].text.length + " chars");
+  check("effort comes from CARD_EFFORT", b.output_config.effort === "medium", b.output_config.effort);
+  check("output is schema-constrained", b.output_config.format.type === "json_schema", JSON.stringify(b.output_config.format).slice(0,60));
+  check("no budget_tokens is sent (removed on this model)", b.thinking === undefined, JSON.stringify(b.thinking));
+  check("no sampling params are sent (rejected on this model)",
+    b.temperature === undefined && b.top_p === undefined && b.top_k === undefined, "present");
+  check("api key goes in the x-api-key header", calls[0].headers["x-api-key"] === "sk-test", "missing");
+  check("an unrecognised level falls back to the default",
+    /LEVEL: Undergraduate/.test(b.messages[0].content), b.messages[0].content.slice(-40));
+
+  // Per-stage routing: the cheap model parses, the better model writes cards.
+  const env2 = baseEnv();
+  calls = [];
+  await hit("/api/topics", { syllabus: LONG }, env2);
+  check("topic extraction uses the cheap MODEL_TOPICS var",
+    calls[0].body.model === "claude-haiku-4-5", calls[0].body.model);
+
+  // Haiku returns 400 for output_config.effort, so it must be omitted there.
+  const envH = baseEnv(); envH.MODEL_CARDS = "claude-haiku-4-5";
+  calls = [];
+  await hit("/api/spark", { topic: { name: "H", gist: "g" } }, envH);
+  check("effort is omitted when the card model is Haiku (it 400s otherwise)",
+    calls[0].body.output_config.effort === undefined, JSON.stringify(calls[0].body.output_config.effort));
+  check("Haiku still gets the schema (structured outputs are supported there)",
+    calls[0].body.output_config.format.type === "json_schema", "missing");
+
+  const envS = baseEnv(); envS.MODEL_CARDS = "claude-sonnet-5";
+  calls = [];
+  await hit("/api/spark", { topic: { name: "S", gist: "g" } }, envS);
+  check("effort IS sent when the card model supports it",
+    calls[0].body.output_config.effort === "medium", String(calls[0].body.output_config.effort));
+}
+
+/* ============================================================
+   Upstream failure handling
+   ============================================================ */
+{
+  const env = baseEnv();
+
+  nextResponse = new Response(JSON.stringify({ stop_reason:"refusal", content:[] }), { status:200 });
+  let r = await hit("/api/spark", { topic:{ name:"R1", gist:"g" } }, env);
+  let j = await r.json();
+  check("a refusal (HTTP 200) becomes an error, not a crash", r.status === 502 && /declined/i.test(j.error), r.status + " " + j.error);
+
+  // A single truncation is recovered by the retry (covered in depth below),
+  // so it must NOT surface as an error here.
+  nextResponse = new Response(JSON.stringify({ stop_reason:"max_tokens",
+    content:[{type:"text",text:"{"}], usage:{input_tokens:10,output_tokens:16000} }), { status:200 });
+  r = await hit("/api/spark", { topic:{ name:"R2", gist:"g" } }, env);
+  check("a single truncation is recovered rather than reported", r.status === 200, String(r.status));
+
+  nextResponse = new Response(JSON.stringify({ error:{ message:"sk-secret-leaked-here" } }), { status:401 });
+  r = await hit("/api/spark", { topic:{ name:"R3", gist:"g" } }, env);
+  j = await r.json();
+  check("upstream 401 is reported as misconfiguration", /misconfigured/i.test(j.error), j.error);
+  check("upstream error text is NOT forwarded to the browser",
+    !/sk-secret-leaked-here/.test(JSON.stringify(j)), "LEAKED: " + j.error);
+
+  nextResponse = new Response(JSON.stringify({ error:{ message:"slow down" } }), { status:429 });
+  r = await hit("/api/spark", { topic:{ name:"R4", gist:"g" } }, env);
+  j = await r.json();
+  check("upstream 429 becomes a friendly busy message", /busy/i.test(j.error), j.error);
+
+  nextResponse = new Response(JSON.stringify({ stop_reason:"end_turn", content:[{type:"thinking",thinking:""}] }), { status:200 });
+  r = await hit("/api/spark", { topic:{ name:"R5", gist:"g" } }, env);
+  check("a response with no text block errors cleanly", r.status === 502, String(r.status));
+}
+
+/* ============================================================
+   Truncation retry — adaptive thinking can eat max_tokens before
+   the JSON is finished (measured: ~1 card in 8 at effort medium)
+   ============================================================ */
+{
+  const env = baseEnv();
+  const truncated = () => new Response(JSON.stringify({
+    stop_reason: "max_tokens",
+    content: [{ type: "text", text: '{"topic":"cut off mid-jso' }],
+    usage: { input_tokens: 1000, output_tokens: 16000 }
+  }), { status: 200 });
+
+  // First attempt truncates, retry succeeds.
+  calls = [];
+  responseQueue = [truncated()];
+  let r = await hit("/api/spark", { topic:{ name:"TR1", gist:"g" } }, env);
+  let j = await r.json();
+  check("a truncated generation is retried, not surfaced as an error",
+    r.status === 200 && j.card.topic === "T", r.status + " " + JSON.stringify(j).slice(0,80));
+  check("the retry actually made a second upstream call", calls.length === 2, String(calls.length));
+  check("the first attempt ran at the configured effort",
+    calls[0].body.output_config.effort === "medium", String(calls[0].body.output_config.effort));
+  check("the retry drops to low effort to leave room for the JSON",
+    calls[1].body.output_config.effort === "low", String(calls[1].body.output_config.effort));
+
+  // Both attempts truncate -> a clean error, and no infinite retry loop.
+  calls = [];
+  responseQueue = [truncated(), truncated()];
+  r = await hit("/api/spark", { topic:{ name:"TR2", gist:"g" } }, env);
+  j = await r.json();
+  check("if the retry also truncates, the error surfaces cleanly",
+    r.status === 502 && /too much output/i.test(j.error), r.status + " " + j.error);
+  check("it retries at most once (no runaway loop)", calls.length === 2, String(calls.length));
+  responseQueue = [];
+}
+
+/* ============================================================
+   Spend caps — the thing protecting a prepaid balance
+   ============================================================ */
+{
+  const env = baseEnv();
+  env.MAX_SPEND_USD_TOTAL = "2.5";   // stub cards cost ~$1.00 each
+
+  let r = await hit("/api/spark", { topic:{ name:"B1", gist:"g" } }, env);
+  check("card 1 is allowed under the lifetime cap", r.status === 200, String(r.status));
+  r = await hit("/api/spark", { topic:{ name:"B2", gist:"g" } }, env);
+  check("card 2 is allowed under the lifetime cap", r.status === 200, String(r.status));
+  r = await hit("/api/spark", { topic:{ name:"B3", gist:"g" } }, env);
+  check("card 3 is allowed (spend still under $2.50)", r.status === 200, String(r.status));
+
+  const spent = parseInt(await env.SPARK_KV.get("spend:total"), 10);
+  check("spend is metered from reported usage, not guessed",
+    spent > 3_000_000 && spent < 3_100_000, spent + " microdollars");
+
+  r = await hit("/api/spark", { topic:{ name:"B4", gist:"g" } }, env);
+  let j = await r.json();
+  check("card 4 is refused once the lifetime cap is exceeded",
+    r.status === 503 && /budget/i.test(j.error), r.status + " " + j.error);
+
+  // Cached cards must survive the cap — that is the point of metering misses only.
+  r = await hit("/api/spark", { topic:{ name:"B1", gist:"g" } }, env);
+  j = await r.json();
+  check("a cached card still serves after the budget is gone",
+    r.status === 200 && j.cached === true, r.status + " cached=" + j.cached);
+
+  // The daily cap is independent of the lifetime cap.
+  const envD = baseEnv();
+  envD.MAX_SPEND_USD_DAY = "1.5";
+  r = await hit("/api/spark", { topic:{ name:"D1", gist:"g" } }, envD);
+  check("day-capped: first card allowed", r.status === 200, String(r.status));
+  r = await hit("/api/spark", { topic:{ name:"D2", gist:"g" } }, envD);
+  check("day-capped: second card allowed", r.status === 200, String(r.status));
+  r = await hit("/api/spark", { topic:{ name:"D3", gist:"g" } }, envD);
+  j = await r.json();
+  check("day-capped: third card refused with the daily message",
+    r.status === 503 && /daily/i.test(j.error), r.status + " " + j.error);
+  check("the daily refusal is distinguishable from the lifetime one",
+    !/used up its generation budget/.test(j.error), j.error);
+}
+
+/* ============================================================
+   Per-IP rate limiting
+   ============================================================ */
+{
+  const env = baseEnv();
+  env.RATE_LIMIT_PER_MINUTE = "2";
+
+  let r = await hit("/api/spark", { topic:{ name:"L1", gist:"g" } }, env);
+  check("request 1 under the per-minute limit is allowed", r.status === 200, String(r.status));
+  r = await hit("/api/spark", { topic:{ name:"L2", gist:"g" } }, env);
+  check("request 2 under the per-minute limit is allowed", r.status === 200, String(r.status));
+  r = await hit("/api/spark", { topic:{ name:"L3", gist:"g" } }, env);
+  let j = await r.json();
+  check("request 3 over the per-minute limit is 429", r.status === 429, String(r.status));
+
+  // A different IP has its own bucket.
+  r = await worker.fetch(req("/api/spark", { topic:{ name:"L4", gist:"g" } }, { headers:{ "cf-connecting-ip":"9.9.9.9" } }), env);
+  check("a different IP is not affected by the first IP's limit", r.status === 200, String(r.status));
+
+  const envD = baseEnv();
+  envD.RATE_LIMIT_PER_DAY = "1";
+  r = await hit("/api/spark", { topic:{ name:"D1", gist:"g" } }, envD);
+  check("request 1 under the per-day limit is allowed", r.status === 200, String(r.status));
+  r = await hit("/api/spark", { topic:{ name:"D2", gist:"g" } }, envD);
+  j = await r.json();
+  check("request 2 over the per-day limit is 429 and points at the samples",
+    r.status === 429 && /sample/i.test(j.error), r.status + " " + j.error);
+}
+
+/* ============================================================
+   Oversized input is clamped, not rejected outright
+   ============================================================ */
+{
+  const env = baseEnv();
+  calls = [];
+  await hit("/api/topics", { syllabus: "Thermodynamics and entropy. ".repeat(5000), course: "x".repeat(500) }, env);
+  const sent = calls[0].body.messages[0].content;
+  check("a 135KB syllabus is truncated to 20k chars before being sent",
+    sent.length < 22000, sent.length + " chars");
+  check("an overlong course name is truncated to 200 chars",
+    /Course: x{200}\n/.test(sent), "not clamped");
+}
+
+const summary = document.getElementById("sum");
+summary.textContent = `${pass} passed, ${fail} failed`;
+summary.className = fail ? "fail" : "pass";
+window.__RESULT__ = { pass, fail };
+</script>
+</body>
+</html>

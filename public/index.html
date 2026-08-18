@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Spark — the first five minutes your lectures are missing</title>
+<style>
+  :root{
+    --bg:#f7f5f0; --panel:#ffffff; --ink:#1b1a17; --muted:#6b6659;
+    --line:#e3ded2; --accent:#c2410c; --accent-soft:#fdf0e8;
+    --ok:#15803d; --ok-soft:#eaf5ee; --shadow:0 1px 2px rgba(27,26,23,.06),0 8px 24px rgba(27,26,23,.06);
+    --radius:14px; --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#141311; --panel:#1c1b18; --ink:#efece4; --muted:#a29c8e;
+      --line:#302e29; --accent:#fb923c; --accent-soft:#2a1d14;
+      --ok:#4ade80; --ok-soft:#16251b;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#141311; --panel:#1c1b18; --ink:#efece4; --muted:#a29c8e;
+    --line:#302e29; --accent:#fb923c; --accent-soft:#2a1d14;
+    --ok:#4ade80; --ok-soft:#16251b;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"]{
+    --bg:#f7f5f0; --panel:#ffffff; --ink:#1b1a17; --muted:#6b6659;
+    --line:#e3ded2; --accent:#c2410c; --accent-soft:#fdf0e8;
+    --ok:#15803d; --ok-soft:#eaf5ee;
+    --shadow:0 1px 2px rgba(27,26,23,.06),0 8px 24px rgba(27,26,23,.06);
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--sans);
+    line-height:1.55; -webkit-font-smoothing:antialiased; overflow-x:hidden;
+  }
+  .wrap{max-width:980px;margin:0 auto;padding:0 20px}
+
+  header{padding:44px 0 8px}
+  .brandrow{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .logo{display:flex;align-items:baseline;gap:10px}
+  .logo b{font-family:var(--serif);font-size:34px;letter-spacing:-.02em;font-weight:600}
+  .logo .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);display:inline-block;transform:translateY(-8px)}
+  .tag{font-family:var(--serif);font-style:italic;color:var(--muted);font-size:17px;margin:6px 0 0}
+  .lede{max-width:60ch;color:var(--muted);margin:18px 0 0;font-size:15px}
+  .lede em{color:var(--ink);font-style:normal;border-bottom:1.5px solid var(--accent)}
+
+  button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  .btn{
+    border:1px solid var(--line); background:var(--panel); color:var(--ink);
+    padding:9px 15px; border-radius:9px; font-size:14px; font-weight:500;
+    transition:border-color .15s, transform .05s;
+  }
+  .btn:hover{border-color:var(--accent)}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .btn.primary:disabled{opacity:.5;cursor:not-allowed}
+  .btn.sm{padding:5px 11px;font-size:12.5px;border-radius:7px}
+
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:22px; margin-top:26px;
+  }
+  .panel h2{margin:0 0 4px;font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  label{display:block;font-size:13px;font-weight:600;margin:16px 0 6px}
+  textarea,input[type=text],select{
+    width:100%; background:var(--bg); color:var(--ink);
+    border:1px solid var(--line); border-radius:9px; padding:11px 12px;
+    font-family:inherit; font-size:14px; resize:vertical;
+  }
+  textarea{min-height:170px;font-family:var(--mono);font-size:13px;line-height:1.5}
+  textarea:focus,input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+  .row{display:flex;gap:14px;flex-wrap:wrap}
+  .row > div{flex:1 1 180px;min-width:0}
+  .hint{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+  .chiprow{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .chip{
+    border:1px solid var(--line);background:var(--bg);padding:6px 12px;border-radius:999px;
+    font-size:12.5px;color:var(--muted);transition:.15s
+  }
+  .chip:hover{border-color:var(--accent);color:var(--ink)}
+  .actions{display:flex;gap:10px;align-items:center;margin-top:20px;flex-wrap:wrap}
+  .note{
+    font-size:12.5px;color:var(--muted);background:var(--accent-soft);
+    border-left:2px solid var(--accent);padding:9px 12px;border-radius:0 7px 7px 0;margin-top:16px
+  }
+
+  #pipeline{display:none}
+  #pipeline.on{display:block}
+  .stage{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px dashed var(--line)}
+  .stage:last-child{border-bottom:none}
+  .stage .num{
+    font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);
+    border-radius:6px;padding:2px 6px;flex:none;margin-top:2px
+  }
+  .stage .body{flex:1;min-width:0}
+  .stage .t{font-weight:600;font-size:14px}
+  .stage .s{font-size:12.5px;color:var(--muted)}
+  .tasks{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .task{
+    font-size:12px;font-family:var(--mono);border:1px solid var(--line);border-radius:6px;
+    padding:3px 8px;color:var(--muted);display:flex;gap:6px;align-items:center
+  }
+  .task.done{color:var(--ok);border-color:var(--ok)}
+  .task.cached{color:var(--accent);border-color:var(--accent)}
+  .task.err{color:#dc2626;border-color:#dc2626}
+  .spin{
+    width:9px;height:9px;border:1.5px solid var(--line);border-top-color:var(--accent);
+    border-radius:50%;animation:sp .7s linear infinite;flex:none
+  }
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  #feed{margin:34px 0 0}
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);margin-bottom:24px;overflow:hidden;
+    animation:rise .35s ease both
+  }
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .card > .head{padding:20px 22px 0}
+  .kicker{
+    font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--accent);font-weight:700
+  }
+  .card h3{margin:5px 0 4px;font-size:21px;font-family:var(--serif);font-weight:600;letter-spacing:-.01em}
+  .oneline{color:var(--muted);font-size:14px;margin:0 0 4px}
+
+  .hook{
+    margin:18px 22px;padding:20px;border-radius:12px;
+    background:var(--accent-soft);border:1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  }
+  .hook .q{font-family:var(--serif);font-size:20px;line-height:1.4;margin:0}
+  .opts{display:grid;gap:8px;margin-top:16px}
+  .opt{
+    text-align:left;border:1px solid var(--line);background:var(--panel);
+    padding:11px 14px;border-radius:9px;font-size:14px;transition:.15s;display:block;width:100%
+  }
+  .opt:hover:not(:disabled){border-color:var(--accent)}
+  .opt:disabled{cursor:default}
+  .opt.correct{border-color:var(--ok);background:var(--ok-soft)}
+  .opt.wrong{opacity:.62}
+  .opt .note2{display:none;font-size:13px;color:var(--muted);margin-top:6px}
+  .opt.revealed .note2{display:block}
+  .opt .mark{font-weight:700;margin-right:7px;color:var(--muted)}
+  .opt.correct .mark{color:var(--ok)}
+
+  .hints{margin-top:14px}
+  .hint-item{
+    font-size:13.5px;color:var(--muted);border-left:2px solid var(--accent);
+    padding:2px 0 2px 12px;margin:8px 0
+  }
+  .locked{
+    text-align:center;color:var(--muted);font-size:13px;padding:16px 22px 22px;font-style:italic
+  }
+  .rest{display:none;padding:0 22px 6px}
+  .rest.on{display:block}
+  .sec{border-top:1px solid var(--line);padding:18px 0}
+  .sec h4{
+    margin:0 0 10px;font-size:11px;letter-spacing:.11em;text-transform:uppercase;
+    color:var(--muted);font-weight:700
+  }
+  .reveal{
+    background:var(--ok-soft);border-radius:10px;padding:15px 17px;font-size:15px;
+    border:1px solid color-mix(in srgb, var(--ok) 24%, transparent)
+  }
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+  .tile{border:1px solid var(--line);border-radius:10px;padding:13px 15px;background:var(--bg)}
+  .tile .tt{font-weight:600;font-size:14px;margin-bottom:4px}
+  .tile .td{font-size:13.5px;color:var(--muted)}
+  .tile .role{
+    font-family:var(--mono);font-size:11px;color:var(--accent);text-transform:uppercase;
+    letter-spacing:.06em;margin-bottom:3px
+  }
+  ol.steps{margin:0;padding-left:20px;font-size:14px}
+  ol.steps li{margin:6px 0}
+  .needs{font-size:12.5px;color:var(--muted);margin-top:10px;font-family:var(--mono)}
+  .vanish{font-size:15px;font-family:var(--serif);font-style:italic}
+  .cardfoot{display:flex;gap:8px;padding:0 22px 18px;flex-wrap:wrap}
+
+  footer{margin:50px 0 60px;color:var(--muted);font-size:13px;text-align:center;line-height:1.7}
+
+  #lecture{
+    display:none;position:fixed;inset:0;background:var(--bg);z-index:50;
+    padding:6vh 6vw;flex-direction:column;justify-content:center
+  }
+  #lecture.on{display:flex}
+  #lecture .lk{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  #lecture .lq{
+    font-family:var(--serif);font-size:clamp(28px,5.2vw,58px);line-height:1.22;
+    margin:20px 0 0;max-width:20ch;letter-spacing:-.02em
+  }
+  #lecture .lsub{margin-top:22px;color:var(--muted);font-size:16px;max-width:56ch;display:none}
+  #lecture .lsub.on{display:block}
+  #lecture .lbar{position:absolute;bottom:4vh;left:6vw;right:6vw;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  #lecture .lcount{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+  .toolbar{display:flex;gap:8px;align-items:center}
+  @media print{
+    .panel,header .toolbar,.cardfoot,#pipeline,#lecture{display:none!important}
+    .rest{display:block!important}
+    .card{break-inside:avoid;box-shadow:none}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header>
+  <div class="brandrow">
+    <div>
+      <div class="logo"><b>Spark</b><span class="dot"></span></div>
+      <p class="tag">The first five minutes your lectures are missing.</p>
+    </div>
+    <div class="toolbar">
+      <button class="btn sm" id="themeBtn">Theme</button>
+      <button class="btn sm" id="lectureBtn">Lecture mode</button>
+      <button class="btn sm" id="exportBtn">Export</button>
+    </div>
+  </div>
+  <p class="lede">
+    Every syllabus tells you <em>what</em> you'll cover and <em>when</em> the exam is.
+    None of them tell you <em>why any of it matters</em>. Paste one below and Spark turns each topic
+    into a question you can't stop thinking about — then shows you where that idea is
+    quietly running the world.
+  </p>
+</header>
+
+<section class="panel">
+  <h2>Input</h2>
+  <div class="row">
+    <div>
+      <label for="course">Course name <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+      <input type="text" id="course" placeholder="e.g. PHY 201 — Thermal Physics" />
+    </div>
+    <div>
+      <label for="level">Level</label>
+      <select id="level">
+        <option>High school</option>
+        <option selected>Undergraduate — intro</option>
+        <option>Undergraduate — advanced</option>
+        <option>Graduate</option>
+      </select>
+    </div>
+  </div>
+
+  <label for="syllabus">Paste your syllabus, module list, or course outline</label>
+  <textarea id="syllabus" placeholder="Unit 1: Zeroth and First Law of Thermodynamics — internal energy, heat, work&#10;Unit 2: The Second Law — entropy, reversible and irreversible processes&#10;Unit 3: Heat engines, refrigerators, Carnot efficiency&#10;..."></textarea>
+  <p class="hint">Messy is fine — week-by-week schedules, bullet lists, or a wall of text all work.</p>
+
+  <div class="chiprow">
+    <span class="hint" style="margin:6px 8px 0 0">Or try a sample:</span>
+    <button class="chip" data-demo="thermo">Thermodynamics</button>
+    <button class="chip" data-demo="trig">Trigonometry</button>
+    <button class="chip" data-demo="dsa">Data Structures &amp; Algorithms</button>
+  </div>
+
+  <div class="actions">
+    <button class="btn primary" id="goBtn">Spark this syllabus</button>
+    <button class="btn" id="clearBtn">Clear</button>
+    <span class="hint" id="status"></span>
+  </div>
+
+  <p class="note">
+    No sign-up, no API key, nothing to install. Generation runs on this site's server.
+    Popular courses are cached, so a syllabus someone already sparked comes back instantly —
+    and the three samples above are pre-written and always free.
+  </p>
+</section>
+
+<section class="panel" id="pipeline">
+  <h2>How it's working</h2>
+  <div class="stage">
+    <span class="num">01</span>
+    <div class="body">
+      <div class="t">Read the syllabus</div>
+      <div class="s">Splitting a wall of course text into distinct, teachable concepts.</div>
+      <div class="tasks" id="tasks1"></div>
+    </div>
+  </div>
+  <div class="stage">
+    <span class="num">02</span>
+    <div class="body">
+      <div class="t">Spark each concept</div>
+      <div class="s">For every topic: find the counterintuitive question, then the real world behind it.</div>
+      <div class="tasks" id="tasks2"></div>
+    </div>
+  </div>
+</section>
+
+<section id="feed"></section>
+
+<footer>
+  Built for the PathFinder's Challenge · Category 01 — Degree Planning &amp; Discovery<br />
+  <span style="opacity:.75">For every teacher who asked the question before giving the answer.</span>
+</footer>
+</div>
+
+<div id="lecture">
+  <div class="lk" id="lk"></div>
+  <p class="lq" id="lq"></p>
+  <p class="lsub" id="lsub"></p>
+  <div class="lbar">
+    <button class="btn sm" id="lPrev">← Prev</button>
+    <button class="btn sm" id="lNext">Next →</button>
+    <button class="btn sm" id="lReveal">Reveal answer (R)</button>
+    <button class="btn sm" id="lClose">Close (Esc)</button>
+    <span class="lcount" id="lcount"></span>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Spark — turns a syllabus into curiosity.
+
+   Two-stage pipeline, both stages served by this site's own API:
+     1. POST /api/topics  syllabus text  ->  list of topics
+     2. POST /api/spark   one topic      ->  one Spark Card
+   No API key lives in this page. Three sample courses are authored
+   in full below, so the site is fully usable even if the backend
+   is unconfigured, rate-limited, or over its daily budget.
+   ============================================================ */
+
+const CONCURRENCY = 3;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s)
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+  .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+
+/* ---------- API ---------- */
+
+async function api(path, body){
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  let data = null;
+  try { data = await res.json(); } catch(_){}
+
+  if(!res.ok){
+    const err = new Error((data && data.error) || ("Request failed (" + res.status + ")"));
+    err.status = res.status;
+    // 429 rate limited, 503 out of daily budget / unconfigured — both mean
+    // "the samples are your path right now", not "something is broken".
+    err.softFallback = (res.status === 429 || res.status === 503);
+    throw err;
+  }
+  return data;
+}
+
+/* Run tasks with bounded concurrency so cards appear steadily
+   instead of all at once after a long wait. */
+async function pool(items, limit, worker){
+  let i = 0;
+  const runners = new Array(Math.min(limit, items.length)).fill(0).map(async () => {
+    while(i < items.length){
+      const idx = i++;
+      await worker(items[idx], idx);
+    }
+  });
+  await Promise.all(runners);
+}
+
+/* ============================================================
+   Sample courses — fully authored, so the app is always usable.
+   ============================================================ */
+
+const DEMOS = {
+thermo:{
+  course:"PHY 201 — Thermal Physics",
+  syllabus:
+"Unit 1: Zeroth and First Law of Thermodynamics — internal energy, heat, work, state functions\n"+
+"Unit 2: The Second Law and Entropy — reversible and irreversible processes, statistical interpretation\n"+
+"Unit 3: Heat Engines and Refrigerators — Carnot cycle, efficiency limits, coefficient of performance",
+  cards:[
+  {
+    topic:"The First Law: Energy, Heat, and Work",
+    one_line:"Energy is never created or destroyed — it only changes address, and heat and work are the two doors it uses.",
+    hook:{
+      question:"You leave the fridge door wide open in a small, sealed kitchen and walk away for an hour. When you come back, is the kitchen colder, warmer, or exactly the same?",
+      why_it_bites:"Everyone's instinct is that a fridge makes cold, so an open fridge should cool the room. The instinct is not just slightly off — it points the wrong way entirely.",
+      options:[
+        {text:"Colder — that's what a fridge does.", correct:false,
+         note:"The fridge doesn't manufacture cold. It moves heat from inside itself to the coils on its back, which are in the same room."},
+        {text:"Exactly the same — the cold air and the hot coils cancel out.", correct:false,
+         note:"Close, and much better reasoning. But the compressor is also drawing electricity the whole time, and that energy has to end up somewhere."},
+        {text:"Warmer.", correct:true,
+         note:"The heat pumped out equals the heat pumped in, so those cancel — but every joule of electricity the compressor consumed is dumped into the room as heat on top."},
+        {text:"It depends on the fridge's efficiency rating.", correct:false,
+         note:"Efficiency changes how fast it warms, not whether. A more efficient fridge heats the sealed room more slowly, never cools it."}
+      ],
+      hints:[
+        "Where does the heat taken out of the fridge's interior actually go? Put your hand behind a running fridge.",
+        "Draw a box around the whole kitchen, fridge included, and ask what crosses that boundary.",
+        "One thing crosses the boundary that you have been ignoring, and you pay a monthly bill for it."
+      ],
+      reveal:"The kitchen gets warmer. Draw your system boundary around the entire sealed kitchen and the First Law says the change in internal energy equals what crosses that boundary. Heat moved from the fridge's interior to its coils never crosses it — that's an internal shuffle, and it cancels exactly. But electrical energy does cross the boundary, continuously, through the wall socket, and the compressor converts essentially all of it to heat. So the room's internal energy climbs at roughly the compressor's power draw. A 100 W fridge left open is a 100 W space heater that also makes noise."
+    },
+    everyday:[
+      {title:"Your laptop is a space heater", detail:"A laptop drawing 60 W converts effectively all of it into heat. In a small closed bedroom, four hours of gaming is a measurable temperature rise, which is why a gaming setup makes a room stuffy."},
+      {title:"Server rooms are cooled, not ventilated", detail:"Data centres spend roughly as much energy on cooling as on computing, because every watt of computation becomes a watt of heat that must be pushed outside the building."},
+      {title:"Rubbing your hands works", detail:"You are doing mechanical work on your skin and it appears as internal energy. No heat was added from anywhere; work and heat are interchangeable currencies."}
+    ],
+    industry:[
+      {sector:"Data centres", role:"Thermal / facilities engineer",
+       how:"Sizes chiller capacity directly from IT load: every kilowatt the servers draw is a kilowatt of heat to remove. Getting the energy balance wrong by 10% means either wasted capital or thermal throttling during a heatwave."},
+      {sector:"Building services", role:"HVAC design engineer",
+       how:"Computes a room's cooling load by adding up occupants (about 100 W of body heat each), lighting, and equipment, then sizes the air-conditioning unit. The First Law is literally the spreadsheet."},
+      {sector:"Battery and EV manufacturing", role:"Battery thermal management engineer",
+       how:"Charging a pack is not 100% efficient; the lost fraction appears as heat inside the cells. That number sets the coolant flow rate needed to keep cells below the temperature where they degrade."}
+    ],
+    build_it:{
+      title:"Turn your laptop into a calorimeter",
+      needs:["A laptop","A phone with a thermometer app, or a cheap digital thermometer","A small closed room"],
+      steps:[
+        "Record the room temperature, then close the door and windows.",
+        "Run something CPU-heavy for an hour — a stress test, a long video render, anything that pins the fan.",
+        "Record the temperature again, at the same spot, away from the laptop.",
+        "Look up your laptop's power draw and estimate how many joules it consumed in that hour.",
+        "Compare: did the room warm roughly as much as that energy predicts for a room of that size?"
+      ]
+    },
+    if_it_vanished:"Without energy accounting, no one could size a power plant, a heater, or a fuel tank. You would find out how much fuel a journey needs by running out of it."
+  },
+  {
+    topic:"The Second Law and Entropy",
+    one_line:"Some processes only run one way — and the reason is counting, not force.",
+    hook:{
+      question:"Stir milk into coffee and it mixes. Keep stirring, forever, and it never separates back out. Yet every single collision between a milk molecule and a coffee molecule is perfectly reversible — run the film backwards and no law of physics is broken. So where does the one-way street come from?",
+      why_it_bites:"The microscopic rules have no arrow of time in them at all. Something has to create irreversibility out of perfectly reversible parts, and it isn't a force.",
+      options:[
+        {text:"Friction destroys the energy needed to unmix.", correct:false,
+         note:"Energy isn't destroyed, and unmixing wouldn't require net energy anyway — the mixed and unmixed states have essentially the same energy."},
+        {text:"Because there are vastly more mixed arrangements than separated ones.", correct:true,
+         note:"Exactly. Unmixing isn't forbidden, it's just overwhelmingly unlikely — you would wait longer than the age of the universe."},
+        {text:"Gravity pulls the denser milk downward and traps it.", correct:false,
+         note:"Mixing happens the same way in free fall. Density plays no essential role here."},
+        {text:"Molecular bonds form between milk and coffee that hold them together.", correct:false,
+         note:"Milk and coffee mix without reacting. The same argument works for two inert gases that bond with nothing."}
+      ],
+      hints:[
+        "Nothing forbids the milk from separating. Ask instead how many ways there are to arrange the molecules in each case.",
+        "Shuffle a deck and you get a random-looking order. There's exactly one way to be in factory order, and about 10^68 ways not to be.",
+        "The arrow of time here is a statement about probability, not about a force."
+      ],
+      reveal:"The one-way street comes from counting. For every arrangement of molecules that looks 'separated', there are astronomically more that look 'mixed' — and the system wanders blindly among all of them. Entropy is essentially the logarithm of that number of arrangements, and the Second Law says a system left alone drifts toward the states it has the most ways of being in. Unmixing is not forbidden; it is merely so improbable that you would wait vastly longer than the universe's age to see it once. This is why the Second Law feels different from the others: it is a law of statistics wearing a physicist's coat."
+    },
+    everyday:[
+      {title:"Your room tidies in one direction only", detail:"There is one arrangement where every object is where it belongs and an unthinkable number where they are not. Randomly nudging things moves you toward the latter, every time."},
+      {title:"Phone batteries never un-drain", detail:"Chemical energy spreads into heat and dispersed products; gathering it back requires you to pay in from outside, which is what charging is."},
+      {title:"You cannot un-scramble an egg", detail:"The protein arrangement in a raw egg is one of vastly few ordered configurations. Heat lets it wander, and it never wanders back."}
+    ],
+    industry:[
+      {sector:"Cryptography and security", role:"Security engineer",
+       how:"Measures entropy of a random number source in bits before it is allowed to seed keys. Too little entropy and keys become guessable — this has caused real-world breaks of TLS certificates generated on low-entropy embedded devices."},
+      {sector:"Data compression", role:"Codec / compression engineer",
+       how:"Shannon entropy sets the hard floor on how small a file can get losslessly. It tells the engineer when to stop optimising because no algorithm can do better."},
+      {sector:"Chemical process engineering", role:"Process design engineer",
+       how:"Uses Gibbs free energy — an entropy-weighted balance — to decide whether a proposed reaction will run at all, before anyone builds a reactor for it."}
+    ],
+    build_it:{
+      title:"Watch entropy happen in a spreadsheet",
+      needs:["Any spreadsheet program, or ten lines of Python"],
+      steps:[
+        "Make two columns of 100 cells: fill the left with 1s and the right with 0s. This is your 'separated' state.",
+        "Write a loop that repeatedly picks two random cells and swaps them.",
+        "After every 50 swaps, count how many 1s are in the left half and plot it.",
+        "Watch it fall toward 50 and stay there, jiggling but never returning to 100.",
+        "Now run it long enough to see whether it ever gets back to 100. It won't. That's the Second Law, and you just wrote it."
+      ]
+    },
+    if_it_vanished:"Every engine, refrigerator, and power plant on Earth is designed around the limit entropy imposes. Without it, engineers would spend forever chasing perpetual motion machines that quietly never work."
+  },
+  {
+    topic:"Heat Engines, Refrigerators, and the Carnot Limit",
+    one_line:"There is a hard ceiling on how much heat you can turn into useful work, and it depends only on two temperatures.",
+    hook:{
+      question:"A coal power plant burns fuel worth 100 units of heat and delivers about 38 units of electricity to the grid. Where do the other 62 go — and could a sufficiently brilliant engineer, with unlimited budget, ever get most of them back?",
+      why_it_bites:"Sixty-two percent waste sounds like sloppy engineering. It sounds like something a better design should fix. It isn't, and that's the surprise.",
+      options:[
+        {text:"They're lost to friction and could largely be recovered with better bearings and materials.", correct:false,
+         note:"Friction is real but small here. Even a perfect frictionless plant would still throw away most of that heat."},
+        {text:"They escape as heat that must be dumped to a colder place, and no engineer can avoid it.", correct:true,
+         note:"Correct. Converting heat fully into work would decrease total entropy, so the dump is not waste — it is the price of admission."},
+        {text:"They're lost in transmission lines on the way to homes.", correct:false,
+         note:"Transmission losses are real but only a few percent. The 62 units are gone before the electricity leaves the plant."},
+        {text:"They're consumed running the plant's own equipment.", correct:false,
+         note:"Parasitic load is a few percent. The bulk leaves through the cooling towers as warm water and steam."}
+      ],
+      hints:[
+        "Look at what a power plant is physically built next to. Why are they always beside a river, a lake, or the sea?",
+        "To convert heat to work you must let it flow from hot to cold. What has to exist at the cold end?",
+        "The ceiling depends on only two numbers, and neither of them is about the quality of the engineering."
+      ],
+      reveal:"They leave through the cooling towers, and no engineer can get them back. A heat engine works by letting heat flow from a hot reservoir to a cold one and skimming off work on the way — but the flow only happens if heat actually arrives at the cold end. Carnot showed the maximum possible fraction you can skim is 1 − T_cold/T_hot, using absolute temperatures. A steam plant running at about 850 K rejecting to a river at about 300 K has a ceiling near 65%, and real irreversibilities pull it down to the high thirties. This is why plants sit beside water, why higher-temperature turbine blades are worth billions in materials research, and why 'waste heat' is a slightly unfair name for something thermodynamics requires."
+    },
+    everyday:[
+      {title:"Your car engine is mostly a heater", detail:"A petrol engine converts roughly 25–30% of fuel energy to motion. The rest is why the radiator and the exhaust are hot, and why cabin heating in winter is essentially free."},
+      {title:"Heat pumps beat electric heaters", detail:"An electric heater turns 1 kW into 1 kW of heat. A heat pump run in reverse moves 3–4 kW of heat for the same 1 kW, because moving heat is cheaper than making it."},
+      {title:"Your fridge works harder in summer", detail:"The coefficient of performance depends on the temperature gap. A hotter kitchen widens the gap, so the compressor runs longer for the same cold interior."}
+    ],
+    industry:[
+      {sector:"Power generation", role:"Turbine / cycle engineer",
+       how:"Combined-cycle gas plants exist entirely to raise the effective hot temperature: they run a gas turbine, then use its still-hot exhaust to boil water for a second steam turbine. That stacking is how modern plants reach roughly 60% instead of 38%."},
+      {sector:"Refrigeration and cold chain", role:"Refrigeration systems engineer",
+       how:"Sizes compressors from the coefficient of performance at worst-case ambient temperature — the number that decides whether a vaccine shipment survives a summer in transit."},
+      {sector:"Semiconductors and aerospace", role:"Materials engineer",
+       how:"Develops single-crystal superalloys and thermal barrier coatings so turbine blades survive higher T_hot. Every 50 K of allowable blade temperature translates directly into efficiency and fuel cost."}
+    ],
+    build_it:{
+      title:"Measure your own kettle's efficiency",
+      needs:["An electric kettle","A measuring jug","A thermometer","A stopwatch"],
+      steps:[
+        "Measure exactly one litre of cold water and record its temperature.",
+        "Time how long the kettle takes to bring it to a rolling boil.",
+        "Compute the heat delivered to the water: 4186 J per kilogram per degree, times the temperature rise.",
+        "Compute the electrical energy consumed: the kettle's rated wattage times the time in seconds.",
+        "Divide. A kettle is one of the few household devices where the target is heat, so efficiency is high — now ask why a car engine cannot do the same."
+      ]
+    },
+    if_it_vanished:"Without the Carnot limit, engineers would have no way to tell a design that is merely poor from one that is physically impossible, and would keep funding both."
+  }]
+},
+
+trig:{
+  course:"MATH 110 — Trigonometry",
+  syllabus:
+"Unit 1: Right triangle trigonometry — sine, cosine, tangent, angles of elevation and depression\n"+
+"Unit 2: The unit circle and radian measure — arc length, periodic functions\n"+
+"Unit 3: Sine waves, amplitude, phase, and superposition",
+  cards:[
+  {
+    topic:"Right Triangles: Sine, Cosine, and Tangent",
+    one_line:"Three ratios that let you measure things you cannot reach.",
+    hook:{
+      question:"You are standing at the base of the tallest building on your campus with a tape measure and a protractor. No ladder, no drone, no blueprints. Can you get its height to within a metre — and what is the one measurement you absolutely cannot skip?",
+      why_it_bites:"The building is unreachable and unclimbable. Everything you own measures things at ground level. And yet two ground-level numbers are enough.",
+      options:[
+        {text:"You can't — you need at least one direct measurement of something vertical.", correct:false,
+         note:"You never touch anything vertical. The angle you sight to the top already encodes the vertical, because a triangle's shape is fixed by one angle and one side."},
+        {text:"Measure your distance from the building, and the angle from your eye up to the roof.", correct:true,
+         note:"Right. Height above eye level is that distance times the tangent of the angle — then add your own eye height, which is the step people forget."},
+        {text:"Measure the building's shadow and your own shadow at the same time.", correct:false,
+         note:"This works and is the classic method, but it needs sunshine and it's really the same triangle in disguise — you're comparing two identical angles."},
+        {text:"Count the floors and multiply by a standard storey height.", correct:false,
+         note:"An estimate, not a measurement, and storey heights vary from about 2.7 m in offices to over 4 m in lobbies."}
+      ],
+      hints:[
+        "You have a protractor. What is the only thing on a building you can point it at from the ground?",
+        "Two numbers fix a right triangle completely: one side and one non-right angle. You can measure both without leaving the pavement.",
+        "Once you have the answer, check it against reality — is your eye at ground level?"
+      ],
+      reveal:"Stand a measured distance d from the base and sight the top with the protractor, reading the angle θ above horizontal. The height above your eye is d·tan θ; add your eye height to get the full building. That is the whole method, and it works because the tangent function is a fixed contract: for a given angle, the ratio of opposite to adjacent is the same in every right triangle, whether it is drawn on paper or spans forty metres of concrete. This is what trigonometry actually is — a way to convert an angle you can measure into a length you cannot. Everything else in the course is bookkeeping around that one idea."
+    },
+    everyday:[
+      {title:"Your phone measures rooms with this", detail:"AR measuring apps track the angle of your camera and the distance it has moved, then solve exactly this triangle to report a length in metres."},
+      {title:"Wheelchair ramp regulations", detail:"A 1:12 slope is a tangent of about 0.083, or roughly 4.8°. Building codes are written in slopes precisely because the angle is what matters to a person pushing."},
+      {title:"How steep is that hill?", detail:"A road sign reading '12%' is a tangent, not an angle — it means 12 metres of climb per 100 metres travelled horizontally."}
+    ],
+    industry:[
+      {sector:"Surveying and construction", role:"Land surveyor",
+       how:"A total station fires a laser to measure distance and reads its own angle, then computes coordinates by exactly this triangle — thousands of times a day, to millimetre accuracy, to set out where foundations go."},
+      {sector:"Game development and graphics", role:"Graphics / gameplay programmer",
+       how:"Converts a player's aim into a direction vector using sine and cosine of the look angles. Every projectile trajectory and every camera orbit in a 3D game is this calculation running sixty times a second."},
+      {sector:"Solar energy", role:"Solar installation designer",
+       how:"Computes panel tilt from site latitude and calculates inter-row shading distances from the sun's winter elevation angle, so rows don't shadow each other in December and destroy the array's annual yield."}
+    ],
+    build_it:{
+      title:"Measure your building, then check the answer",
+      needs:["A phone with a clinometer or level app (most have one built in)","A tape measure or a known stride length","A friend, optionally"],
+      steps:[
+        "Walk a measured distance from the base of a tall building — pace it out and multiply by your stride length if you have no tape.",
+        "Open the clinometer app, sight along the phone's edge to the roofline, and read the angle.",
+        "Compute distance × tan(angle), then add your eye height above the ground.",
+        "Repeat from a completely different distance. You should get the same height — if not, one of your measurements is off, and finding which is the real lesson.",
+        "Look up the building's actual height and see how close you got."
+      ]
+    },
+    if_it_vanished:"Nobody could survey land, lay out a road, or aim anything without physically reaching it. Every map, property boundary, and tunnel that meets in the middle depends on turning angles into distances."
+  },
+  {
+    topic:"The Unit Circle and Radian Measure",
+    one_line:"A way of measuring angles in which the maths finally stops fighting you.",
+    hook:{
+      question:"A full turn is 360 degrees — a number with a satisfying pile of divisors, inherited from Babylonian astronomers. Mathematicians threw it out and insisted a full turn is 2π, an irrational number nobody can write down. Who exactly benefits from that trade, and what did they gain?",
+      why_it_bites:"Swapping a clean integer for an irrational number looks like a downgrade. It is a rare case where the uglier-looking convention is the one that simplifies everything downstream.",
+      options:[
+        {text:"Nobody really — it's a convention mathematicians agreed on for tradition's sake.", correct:false,
+         note:"Radians are much younger than degrees and were adopted specifically because they removed constants that kept appearing everywhere."},
+        {text:"Because arc length becomes simply radius times angle, and calculus loses a stray constant.", correct:true,
+         note:"Yes. In radians, arc = rθ with no conversion factor, and the derivative of sin is exactly cos. In degrees it is cos multiplied by π/180, forever."},
+        {text:"Because 2π is more accurate than 360 for describing a circle.", correct:false,
+         note:"Both describe a full turn exactly. Accuracy isn't the issue — what changes is how much algebra rides along."},
+        {text:"Because computers can only work in radians.", correct:false,
+         note:"Computers work in whatever you tell them. Every language's trig library takes radians because the maths does, not the other way round."}
+      ],
+      hints:[
+        "Ask what an angle of 1 actually means in each system. In one of them it means something physical about the circle itself.",
+        "Write down the arc length of a sector in degrees, then in radians. Count the constants.",
+        "Now differentiate sin(x) in each system and see which one leaves a mess behind."
+      ],
+      reveal:"Radians benefit anyone who does anything with a circle beyond naming its angles. Define the angle as arc length divided by radius and it becomes a pure ratio — a number with no units attached to it. Immediately arc length is rθ, sector area is ½r²θ, and angular velocity times radius gives linear speed, all with no conversion factors bolted on. The payoff lands hardest in calculus: d/dx sin(x) = cos(x) only in radians. In degrees, every derivative drags along a factor of π/180, and after three derivatives you are carrying its cube. Degrees are a naming scheme for angles; radians are a measurement of them."
+    },
+    everyday:[
+      {title:"Your phone's screen rotation", detail:"The animation that spins your screen interpolates an angle in radians, because the physics of smooth rotation is written that way."},
+      {title:"Bike gears", detail:"How far you travel per pedal stroke is wheel radius times the angle turned — trivially rθ in radians, and a mess of conversion constants in degrees."},
+      {title:"Every sine wave you have ever seen plotted", detail:"The x-axis on an oscilloscope trace or an audio waveform is time, but the maths underneath measures phase in radians."}
+    ],
+    industry:[
+      {sector:"Robotics", role:"Robotics / controls engineer",
+       how:"Joint angles, angular velocities, and the Jacobian matrices that convert joint motion into gripper motion are all expressed in radians, because mixing units into those matrices would inject conversion factors into every control loop."},
+      {sector:"Signal processing and audio", role:"DSP engineer",
+       how:"Filter design works in normalised angular frequency, where π corresponds to half the sampling rate. An engineer reads a filter's cutoff directly off that scale without ever converting."},
+      {sector:"Aerospace and navigation", role:"Guidance and navigation engineer",
+       how:"Small-angle approximations — sin θ ≈ θ for small θ — are valid only in radians and are used throughout attitude control, letting engineers linearise otherwise intractable equations."}
+    ],
+    build_it:{
+      title:"Feel the difference in ten lines of code",
+      needs:["Any calculator or a Python console"],
+      steps:[
+        "Compute sin(0.01) with your calculator in radian mode. Note that the answer is almost exactly 0.01.",
+        "Now switch to degree mode and compute sin(0.01). It is about 0.000175 — a completely different number.",
+        "That first result is the small-angle approximation, and it is why aerospace and physics run in radians.",
+        "Plot y = sin(x) from 0 to 6.3 in radians, then from 0 to 360 in degrees, and compare the slope at the origin.",
+        "The radian plot has slope exactly 1 at the origin. That is the whole reason for the convention."
+      ]
+    },
+    if_it_vanished:"Every formula in physics involving rotation, oscillation, or waves would carry a trailing π/180, and calculus on trigonometric functions would be a bookkeeping nightmare rather than a tool."
+  },
+  {
+    topic:"Sine Waves, Phase, and Superposition",
+    one_line:"When two waves meet, they add — and adding can mean cancelling.",
+    hook:{
+      question:"Two speakers, side by side, playing the exact same steady tone at the exact same volume. You walk slowly along a line in front of them and the sound goes loud, quiet, loud, quiet. Nothing about the speakers changed. What changed about you?",
+      why_it_bites:"More sound sources should mean more sound. That there are places where two speakers are quieter than one is genuinely strange until you see the mechanism.",
+      options:[
+        {text:"Your ears adjust as you move, so it's a perception effect.", correct:false,
+         note:"Put a microphone on a slider instead of your head and it records the same pattern. This is happening in the air, not in you."},
+        {text:"Your distance to each speaker changed, so the two waves arrive out of step.", correct:true,
+         note:"Exactly. Where the path difference is half a wavelength, a peak from one meets a trough from the other and they cancel."},
+        {text:"The room's echoes shift as you move around.", correct:false,
+         note:"Echoes complicate it, but the effect appears cleanly in an anechoic chamber or outdoors, where there are no reflections at all."},
+        {text:"Sound spreads out and gets weaker, so you're just moving further away.", correct:false,
+         note:"That would give a smooth fade, not a repeating loud-quiet-loud pattern along a line at constant distance."}
+      ],
+      hints:[
+        "The two waves are identical in shape. The only thing that can differ when they reach you is when each one arrives.",
+        "Sound at 340 Hz has a wavelength of about a metre. How far do you have to step for one speaker to be half a metre further than the other?",
+        "Draw two sine waves and slide one of them half a period to the right. Now add them point by point."
+      ],
+      reveal:"What changed is the difference in distance from you to each speaker. Both waves leave in step, but if one travels half a wavelength further than the other, its peaks arrive exactly where the other's troughs are, and the pressure variations cancel — destructive interference. Step further and the extra path reaches a full wavelength, they realign, and you get double the amplitude. The controlling quantity is phase: the position within a cycle, measured as an angle, and the whole reason sine is the natural language for waves. This single mechanism — waves adding with regard to phase — is behind interference, diffraction, and every antenna array ever built."
+    },
+    everyday:[
+      {title:"Noise-cancelling headphones", detail:"A microphone samples the incoming sound and the headphone plays it back inverted — a half-wavelength phase shift, deliberately engineered so the sum at your eardrum is near zero."},
+      {title:"Dead spots in a concert hall", detail:"Certain seats sound muddy because reflections off a wall arrive out of phase with the direct sound, cancelling specific frequencies. Acousticians spend careers on this."},
+      {title:"The oily rainbow on a puddle", detail:"Light reflecting off the top and bottom of a thin oil film interferes with itself. Different colours cancel at different film thicknesses, so you see bands of colour."}
+    ],
+    industry:[
+      {sector:"Telecommunications", role:"RF / antenna engineer",
+       how:"Phased array antennas steer a radio beam with no moving parts by deliberately delaying each element's signal, so the waves add constructively in one chosen direction and cancel elsewhere. This is how 5G base stations track a moving phone."},
+      {sector:"Medical imaging", role:"Ultrasound systems engineer",
+       how:"Focuses an ultrasound beam by firing transducer elements at staggered times so all wavefronts arrive in phase at one depth — that focal point is what makes a foetal scan sharp rather than a blur."},
+      {sector:"Consumer audio", role:"Audio DSP engineer",
+       how:"Checks speaker crossovers for phase alignment; wire one driver backwards and the bass cancels at the crossover frequency, which is a real and common manufacturing defect."}
+    ],
+    build_it:{
+      title:"Find the dead spots with your phone",
+      needs:["Two speakers (phone plus a laptop works)","A tone generator app or a YouTube test tone","An open space, ideally outdoors"],
+      steps:[
+        "Play the same steady tone — try 500 Hz — from both speakers at the same volume, about two metres apart, facing you.",
+        "Stand about three metres back and walk slowly side to side, parallel to the line joining the speakers.",
+        "Listen for the volume rising and falling. Mark the quiet spots on the ground.",
+        "Measure the spacing between quiet spots, then try a higher tone — say 1000 Hz — and measure again.",
+        "The spacing should roughly halve when you double the frequency. You have just measured the wavelength of sound."
+      ]
+    },
+    if_it_vanished:"There would be no radio, no wifi, no ultrasound, no noise cancellation, and no way to design a concert hall that doesn't sound like a car park."
+  }]
+},
+
+dsa:{
+  course:"CS 201 — Data Structures and Algorithms",
+  syllabus:
+"Unit 1: Arrays, linked lists, and memory layout — cost of traversal and insertion\n"+
+"Unit 2: Hash tables — hashing, collisions, load factor, amortised resizing\n"+
+"Unit 3: Graph traversal — breadth-first and depth-first search, shortest paths",
+  cards:[
+  {
+    topic:"Arrays, Linked Lists, and Memory Layout",
+    one_line:"Two structures with identical operation counts and wildly different speeds, because the hardware has opinions.",
+    hook:{
+      question:"Two collections of a million integers: one a plain array, one a linked list. You do the simplest thing possible — add up every element. Both perform exactly one million additions. The array finishes roughly ten times faster. What is the array actually winning at, if not arithmetic?",
+      why_it_bites:"Big-O says both are O(n). The theory declares them equal and reality disagrees by an order of magnitude, which means the theory is measuring the wrong thing.",
+      options:[
+        {text:"Linked lists have overhead from following pointers, which costs extra instructions.", correct:false,
+         note:"There is a small instruction cost, but nowhere near 10×. The real gap is about waiting, not about executing."},
+        {text:"The array's elements sit next to each other in memory, so the CPU can fetch them in bulk and guess what's next.", correct:true,
+         note:"Right. Memory arrives in cache lines of about 64 bytes, and the prefetcher predicts sequential access. A linked list defeats both."},
+        {text:"Arrays are stored in faster memory than linked lists.", correct:false,
+         note:"Both live in the same RAM. What differs is how effectively each uses the cache sitting in front of it."},
+        {text:"Compilers optimise array loops but can't optimise pointer chasing.", correct:false,
+         note:"A contributing factor, but even with optimisation disabled entirely the gap persists — it's a hardware effect, not a compiler one."}
+      ],
+      hints:[
+        "Big-O counts operations. Ask instead what the CPU is doing between operations.",
+        "RAM is roughly 100× slower than L1 cache. Memory never arrives one byte at a time — it arrives in chunks.",
+        "Where does the next linked-list node live? Can the CPU possibly know before it reads the current one?"
+      ],
+      reveal:"The array wins at waiting less. Memory is fetched in cache lines of about 64 bytes, so reading one 4-byte integer from an array drags in the next fifteen for free — one memory trip serves sixteen additions. The hardware prefetcher then notices the sequential pattern and starts fetching ahead before you ask. A linked list defeats both: nodes are scattered wherever the allocator put them, each cache line delivers one useful integer, and the CPU cannot prefetch because it does not know the next address until it has read the current node. That is a data dependency, and it stalls the pipeline every single time. Big-O counts operations; it deliberately ignores that not all operations cost the same, which is precisely the gap this experiment lives in."
+    },
+    everyday:[
+      {title:"Why some apps feel snappy", detail:"Scrolling a list smoothly usually means the underlying data is laid out contiguously. Janky scrolling is often pointer-chasing through scattered objects."},
+      {title:"Spreadsheets with 100,000 rows", detail:"Column-oriented storage is the same trick: keeping one column's values adjacent so a sum reads straight through memory."},
+      {title:"Game frame rates", detail:"Games routinely restructure objects so all positions live in one contiguous array, updated in a tight loop, rather than scattered inside individual object instances."}
+    ],
+    industry:[
+      {sector:"Databases", role:"Database engine developer",
+       how:"Columnar formats like Parquet and engines like ClickHouse store each column contiguously precisely for this reason — an aggregate over one column reads straight through memory instead of hopping between rows."},
+      {sector:"Game engines", role:"Engine / performance programmer",
+       how:"Entity-component-system architectures exist entirely to convert scattered object graphs into flat arrays, often turning a 30 fps simulation into 60 fps with no algorithmic change at all."},
+      {sector:"High-frequency trading", role:"Low-latency systems engineer",
+       how:"Lays out order books in flat arrays and pre-allocates memory to avoid cache misses, because a few hundred nanoseconds of stall decides whether an order fills."}
+    ],
+    build_it:{
+      title:"Measure the gap yourself",
+      needs:["Any language with a timer — Python, JavaScript in a browser console, C, anything"],
+      steps:[
+        "Build an array of 10 million integers and time a loop that sums them.",
+        "Build a linked structure with the same 10 million values — in Python, a chain of small objects each holding a value and a reference to the next.",
+        "Time summing that. Same number of additions.",
+        "Compare the two times, then shuffle the order in which the linked nodes were allocated and time it again.",
+        "The shuffle should make it worse, which proves the effect is about memory addresses, not about the algorithm."
+      ]
+    },
+    if_it_vanished:"Every performance-critical system would be designed by counting operations alone, and would run several times slower than necessary for reasons nobody could explain."
+  },
+  {
+    topic:"Hash Tables",
+    one_line:"Constant-time lookup, bought with memory and a good scrambling function.",
+    hook:{
+      question:"You have a dictionary of ten million words and want to know whether 'quokka' is in it. Binary search on a sorted list takes about 24 comparisons. A hash table answers in roughly one — without examining a single other word. That's not an optimisation, it's a different category of thing. What did the hash table have to give up to buy that?",
+      why_it_bites:"Sublinear is impressive; effectively constant regardless of size sounds like cheating. Something must have been traded, and finding what is the whole insight.",
+      options:[
+        {text:"Nothing — hash tables are simply a better data structure.", correct:false,
+         note:"There is always a trade. A hash table is worse than a sorted list at several things you may not have needed today."},
+        {text:"Ordering, plus a chunk of spare memory that must sit empty.", correct:true,
+         note:"Correct. You cannot ask a hash table for 'the next word alphabetically', and it must stay perhaps 30% empty or collisions destroy performance."},
+        {text:"Accuracy — hash tables can return false positives.", correct:false,
+         note:"That's a Bloom filter, a different structure. A real hash table stores the key and verifies it, so it never lies."},
+        {text:"Insert speed — building a hash table is much slower.", correct:false,
+         note:"Insertion is also roughly constant time. Occasional resizes are costly but amortise away to almost nothing."}
+      ],
+      hints:[
+        "Ask the hash table for all words starting with 'qu', in order. Notice how badly that goes.",
+        "What happens to lookup speed as the table fills up? Why is a full hash table a disaster?",
+        "The hash function computes an address from the key itself. What must be true about where things get stored for that to work?"
+      ],
+      reveal:"It gave up order, and it bought its speed with memory. A hash function turns the key itself into an array index, so the structure jumps straight to the answer rather than searching for it — but that index is essentially random, which means the words are scattered with no relationship between neighbours. Ask for everything alphabetically between 'quokka' and 'quorum' and the hash table cannot help you at all, while the sorted list answers instantly. It also must stay deliberately partly empty: as load factor climbs past about 0.7, collisions pile up and lookups degrade toward linear. So the real statement is not 'hash tables are faster' but 'hash tables trade ordering and memory for lookup speed', and knowing when you need ordering is what separates picking a structure from guessing at one."
+    },
+    everyday:[
+      {title:"Every dictionary and object you use", detail:"Python dicts, JavaScript objects, Java HashMaps — all hash tables. When your code does data['name'], this is running."},
+      {title:"Your browser's URL bar", detail:"Autocomplete needs prefix matching, which is why browsers use a trie or sorted index there rather than a hash table — the ordering trade-off in action."},
+      {title:"Password storage", detail:"Sites store a hash of your password rather than the password. Same mathematical idea, applied for irreversibility rather than lookup speed."}
+    ],
+    industry:[
+      {sector:"Distributed systems", role:"Backend / infrastructure engineer",
+       how:"Consistent hashing decides which of a thousand cache servers holds a given key, so adding a server relocates only a fraction of the data instead of everything. This is the core of Memcached, Redis Cluster, and DynamoDB's partitioning."},
+      {sector:"Compilers", role:"Compiler engineer",
+       how:"Symbol tables are hash tables mapping identifiers to declarations. A compiler resolves millions of names in a large codebase and cannot afford a search for each."},
+      {sector:"Security and content delivery", role:"Security engineer",
+       how:"Content-addressed storage hashes a file's bytes to produce its identity, so Git and Docker can deduplicate identical blobs and detect tampering by comparing a single short digest."}
+    ],
+    build_it:{
+      title:"Write a hash table in thirty lines",
+      needs:["Any language, no libraries"],
+      steps:[
+        "Make an array of 16 empty lists — these are your buckets.",
+        "Write a hash function: sum the character codes of a string, then take the remainder modulo 16.",
+        "To insert, append the key to the bucket at that index. To look up, scan only that one bucket.",
+        "Insert 200 words, then print how many words landed in each bucket. Notice the unevenness.",
+        "Now swap in a better hash — multiply by 31 and add each character — and print the distribution again. That improvement is the whole art."
+      ]
+    },
+    if_it_vanished:"Every lookup in every program would scale with the size of the data. Databases, compilers, and caches would all slow to a crawl as they grew."
+  },
+  {
+    topic:"Graph Traversal: Breadth-First and Depth-First Search",
+    one_line:"Two ways to explore a network, differing only in what order you check things — which turns out to change everything.",
+    hook:{
+      question:"LinkedIn tells you someone is a '3rd-degree connection'. There are roughly a billion people on the platform. To work out that number for one stranger, does the system have to look at a billion profiles? If not, how few can it get away with?",
+      why_it_bites:"A billion nodes sounds like a billion checks. The actual answer involves searching from both ends at once, and the saving is far larger than most people guess.",
+      options:[
+        {text:"Yes — it must check everyone to be sure of the shortest path.", correct:false,
+         note:"Shortest-path search can stop the moment it finds the target. It never needs to visit nodes further away than that."},
+        {text:"No — it expands outward from you level by level and stops as soon as it reaches them.", correct:true,
+         note:"That's breadth-first search, and it's the right shape. Searching from both ends simultaneously cuts the work dramatically further."},
+        {text:"No — it stores every pair's distance in a precomputed table.", correct:false,
+         note:"A billion squared is 10^18 entries. That table cannot exist."},
+        {text:"No — it uses depth-first search to follow chains until it finds them.", correct:false,
+         note:"Depth-first would find a path but not necessarily the shortest one, and could wander very far before returning."}
+      ],
+      hints:[
+        "You only care about degree 1, 2, or 3. What happens if you simply refuse to look past three steps?",
+        "Your friends' friends' friends is already a huge set. But so is theirs — what if you grow both sets and watch for an overlap?",
+        "Meeting in the middle means each side only has to grow half as deep. What does that do to the exponent?"
+      ],
+      reveal:"It never looks at a billion profiles. Breadth-first search expands outward in rings — your direct connections, then theirs, then theirs — and stops the instant the target appears, so anything at distance four or beyond is never touched. The real trick is bidirectional search: grow a frontier from you and another from them, and stop when they intersect. If each person has about 300 connections, a one-sided search to depth 3 touches roughly 300³ ≈ 27 million nodes, while two searches meeting at depth 1.5 each touch only thousands. Depth-first search would also find a path, but by plunging down one chain at a time it can return a fifteen-step connection when a two-step one existed. The choice between a queue and a stack is the entire difference between the two algorithms, and it decides whether your answer is shortest or merely valid."
+    },
+    everyday:[
+      {title:"Maps routing you around traffic", detail:"Shortest-path search over a graph of road segments, weighted by current travel time rather than distance."},
+      {title:"'People you may know'", detail:"Friend suggestions are largely nodes at distance 2 with many shared neighbours — one breadth-first ring outward from you."},
+      {title:"Solving a maze on paper", detail:"Following one corridor until it dead-ends and backtracking is depth-first. Fanning out from the entrance in all directions is breadth-first, and it finds the shortest route."}
+    ],
+    industry:[
+      {sector:"Logistics and delivery", role:"Routing / operations research engineer",
+       how:"Builds shortest-path and vehicle-routing solutions over road networks with millions of edges. A one-percent improvement in route length across a national fleet is worth millions in fuel annually."},
+      {sector:"Fraud detection", role:"Data scientist, financial crime",
+       how:"Traverses the graph of accounts and transfers to find rings — clusters that route money through several hops to disguise the source. The suspicious signal is the graph structure, not any individual transaction."},
+      {sector:"Software infrastructure", role:"Build systems / DevOps engineer",
+       how:"Uses depth-first traversal with cycle detection over the dependency graph to compute build order, and to fail loudly when a circular dependency is introduced."}
+    ],
+    build_it:{
+      title:"Find the degrees of separation in Wikipedia",
+      needs:["Any language with an HTTP library","Wikipedia's API, which is free and open"],
+      steps:[
+        "Pick two unrelated articles — say 'Quokka' and 'Thermodynamics'.",
+        "Write a function that fetches all outgoing links from an article using the Wikipedia API.",
+        "Implement breadth-first search from the first article, keeping a queue and a set of visited pages.",
+        "Stop when you reach the target, and print the path. Note how many pages you had to fetch.",
+        "Now implement it bidirectionally — search from both articles at once and stop when the visited sets intersect. Compare the counts. That ratio is the point of the exercise."
+      ]
+    },
+    if_it_vanished:"There would be no route planning, no network analysis, and no way to answer 'how are these two things connected' on any system too large to eyeball."
+  }]
+}
+};
+
+/* ============================================================
+   State + rendering
+   ============================================================ */
+
+let CARDS = [];
+
+function setStatus(msg){ $("status").textContent = msg || ""; }
+
+function taskChip(label, state){
+  const cls = state === "done" ? " done" : state === "cached" ? " cached" : state === "err" ? " err" : "";
+  const icon = state === "run" ? '<span class="spin"></span>' :
+               state === "done" ? "✓" : state === "cached" ? "⚡" : state === "err" ? "✕" : "·";
+  return '<span class="task' + cls + '">' + icon + " " + esc(label) + "</span>";
+}
+
+function renderCard(card, index){
+  const optHtml = card.hook.options.map((o, i) =>
+    '<button class="opt" data-i="' + i + '">' +
+      '<span class="mark">' + String.fromCharCode(65 + i) + '</span>' + esc(o.text) +
+      '<span class="note2">' + esc(o.note) + '</span>' +
+    '</button>'
+  ).join("");
+
+  const hintsHtml = card.hook.hints.map(h => '<div class="hint-item">' + esc(h) + '</div>').join("");
+
+  const everydayHtml = (card.everyday || []).map(e =>
+    '<div class="tile"><div class="tt">' + esc(e.title) + '</div><div class="td">' + esc(e.detail) + '</div></div>'
+  ).join("");
+
+  const industryHtml = (card.industry || []).map(x =>
+    '<div class="tile"><div class="role">' + esc(x.role) + '</div>' +
+    '<div class="tt">' + esc(x.sector) + '</div><div class="td">' + esc(x.how) + '</div></div>'
+  ).join("");
+
+  const stepsHtml = (card.build_it.steps || []).map(s => "<li>" + esc(s) + "</li>").join("");
+  const needsHtml = (card.build_it.needs || []).map(esc).join(" · ");
+
+  const el = document.createElement("article");
+  el.className = "card";
+  el.innerHTML =
+    '<div class="head">' +
+      '<div class="kicker">Topic ' + String(index + 1).padStart(2, "0") + '</div>' +
+      '<h3>' + esc(card.topic) + '</h3>' +
+      '<p class="oneline">' + esc(card.one_line) + '</p>' +
+    '</div>' +
+
+    '<div class="hook">' +
+      '<p class="q">' + esc(card.hook.question) + '</p>' +
+      '<div class="opts">' + optHtml + '</div>' +
+      '<div class="hints" hidden>' + hintsHtml + '</div>' +
+      '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="btn sm hintBtn">Need a nudge?</button>' +
+        '<button class="btn sm skipBtn">Just show me</button>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="locked">Answer first — the rest of the card unlocks once you commit to a guess.</div>' +
+
+    '<div class="rest">' +
+      '<div class="sec"><h4>The answer</h4><div class="reveal">' + esc(card.hook.reveal) + '</div></div>' +
+      '<div class="sec"><h4>Where this is already in your life</h4><div class="grid2">' + everydayHtml + '</div></div>' +
+      '<div class="sec"><h4>Where it pays the bills</h4><div class="grid2">' + industryHtml + '</div></div>' +
+      '<div class="sec"><h4>Go see it for yourself</h4>' +
+        '<div style="font-weight:600;margin-bottom:8px">' + esc(card.build_it.title) + '</div>' +
+        '<ol class="steps">' + stepsHtml + '</ol>' +
+        '<div class="needs">You need: ' + needsHtml + '</div>' +
+      '</div>' +
+      '<div class="sec"><h4>If nobody had figured this out</h4>' +
+        '<p class="vanish">' + esc(card.if_it_vanished) + '</p></div>' +
+    '</div>' +
+
+    '<div class="cardfoot">' +
+      '<button class="btn sm copyBtn">Copy as Markdown</button>' +
+      '<button class="btn sm lectureOne">Project this question</button>' +
+    '</div>';
+
+  const rest = el.querySelector(".rest");
+  const locked = el.querySelector(".locked");
+  const opts = Array.from(el.querySelectorAll(".opt"));
+
+  function unlock(){
+    opts.forEach((b, i) => {
+      b.disabled = true;
+      b.classList.add("revealed");
+      b.classList.add(card.hook.options[i].correct ? "correct" : "wrong");
+    });
+    rest.classList.add("on");
+    locked.style.display = "none";
+  }
+
+  opts.forEach(b => b.addEventListener("click", unlock));
+  el.querySelector(".skipBtn").addEventListener("click", unlock);
+
+  el.querySelector(".hintBtn").addEventListener("click", (e) => {
+    el.querySelector(".hints").hidden = false;
+    e.target.style.display = "none";
+  });
+
+  el.querySelector(".copyBtn").addEventListener("click", (e) => {
+    navigator.clipboard.writeText(cardToMarkdown(card, index));
+    e.target.textContent = "Copied";
+    setTimeout(() => { e.target.textContent = "Copy as Markdown"; }, 1400);
+  });
+
+  el.querySelector(".lectureOne").addEventListener("click", () => openLecture(index));
+
+  return el;
+}
+
+function cardToMarkdown(card, i){
+  const L = [];
+  L.push("## " + (i + 1) + ". " + card.topic);
+  L.push("");
+  L.push("_" + card.one_line + "_");
+  L.push("");
+  L.push("### The hook");
+  L.push("> " + card.hook.question);
+  L.push("");
+  card.hook.options.forEach((o, n) => {
+    L.push("- **" + String.fromCharCode(65 + n) + ".** " + o.text + (o.correct ? "  ← correct" : ""));
+    L.push("  - " + o.note);
+  });
+  L.push("");
+  L.push("**Hints**");
+  card.hook.hints.forEach(h => L.push("- " + h));
+  L.push("");
+  L.push("**Answer:** " + card.hook.reveal);
+  L.push("");
+  L.push("### Where this is already in your life");
+  (card.everyday || []).forEach(e => L.push("- **" + e.title + "** — " + e.detail));
+  L.push("");
+  L.push("### Where it pays the bills");
+  (card.industry || []).forEach(x => L.push("- **" + x.sector + "** (" + x.role + ") — " + x.how));
+  L.push("");
+  L.push("### Go see it for yourself — " + card.build_it.title);
+  L.push("You need: " + (card.build_it.needs || []).join(", "));
+  (card.build_it.steps || []).forEach((s, n) => L.push((n + 1) + ". " + s));
+  L.push("");
+  L.push("### If nobody had figured this out");
+  L.push(card.if_it_vanished);
+  L.push("");
+  return L.join("\n");
+}
+
+function addCard(card){
+  CARDS.push(card);
+  $("feed").appendChild(renderCard(card, CARDS.length - 1));
+}
+
+function resetFeed(){
+  CARDS = [];
+  $("feed").innerHTML = "";
+  $("tasks1").innerHTML = "";
+  $("tasks2").innerHTML = "";
+}
+
+/* ============================================================
+   Run
+   ============================================================ */
+
+async function run(){
+  const syllabus = $("syllabus").value.trim();
+  const course = $("course").value.trim();
+  const level = $("level").value;
+
+  if(!syllabus){ setStatus("Paste a syllabus first, or try one of the samples."); return; }
+
+  // A pasted sample runs from the curated library — instant and free.
+  const demoKey = Object.keys(DEMOS).find(k => DEMOS[k].syllabus === syllabus);
+  if(demoKey){ runDemo(demoKey); return; }
+
+  resetFeed();
+  $("goBtn").disabled = true;
+  $("pipeline").classList.add("on");
+  setStatus("");
+
+  try{
+    $("tasks1").innerHTML = taskChip("reading syllabus", "run");
+    const parsed = await api("/api/topics", { syllabus, course, level });
+    const topics = parsed.topics || [];
+    if(!topics.length) throw new Error("Couldn't find any teachable topics in that text.");
+
+    $("tasks1").innerHTML = taskChip(topics.length + " topics found", parsed.cached ? "cached" : "done");
+    $("tasks2").innerHTML = topics.map(t => taskChip(t.name, "run")).join("");
+
+    const results = new Array(topics.length).fill(null);
+    let settled = 0;
+
+    await pool(topics, CONCURRENCY, async (topic, idx) => {
+      try{
+        const out = await api("/api/spark", { topic, course: course || parsed.course, level });
+        results[idx] = { card: out.card, cached: !!out.cached };
+      }catch(err){
+        results[idx] = { error: err.message, soft: !!err.softFallback };
+      }
+      settled++;
+      setStatus(settled + " of " + topics.length + " sparked");
+
+      $("tasks2").innerHTML = topics.map((t, i) => {
+        const r = results[i];
+        if(!r) return taskChip(t.name, "run");
+        if(r.error) return taskChip(t.name, "err");
+        return taskChip(t.name, r.cached ? "cached" : "done");
+      }).join("");
+
+      // Flush finished cards in order, stepping over any that failed so a
+      // single bad topic never blocks the rest of the feed.
+      while(CARDS.length < results.length && results[CARDS.length]){
+        const r = results[CARDS.length];
+        if(r.error){ CARDS.push({ __skipped:true }); }
+        else { addCard(r.card); }
+      }
+    });
+
+    const good = results.filter(r => r && r.card).length;
+    const cachedCount = results.filter(r => r && r.cached).length;
+    const soft = results.find(r => r && r.soft);
+
+    if(good){
+      setStatus(good + " topics sparked" + (cachedCount ? " (" + cachedCount + " from cache)" : "") + ".");
+    }else if(soft){
+      setStatus(soft.error + " Try a sample below in the meantime.");
+    }else{
+      setStatus("Every topic failed. Try again in a moment.");
+    }
+
+  }catch(err){
+    $("tasks1").innerHTML = taskChip("failed", "err");
+    // Only point at the samples if the server hasn't already said so.
+    const needsHint = err.softFallback && !/sample/i.test(err.message);
+    setStatus(needsHint ? err.message + " The samples below always work." : err.message);
+  }finally{
+    $("goBtn").disabled = false;
+  }
+}
+
+function runDemo(key){
+  const d = DEMOS[key];
+  resetFeed();
+  $("pipeline").classList.add("on");
+  $("goBtn").disabled = true;
+  setStatus("Running the curated sample — instant, and free.");
+
+  $("tasks1").innerHTML = taskChip("reading syllabus", "run");
+  setTimeout(() => {
+    $("tasks1").innerHTML = taskChip(d.cards.length + " topics found", "done");
+    $("tasks2").innerHTML = d.cards.map(c => taskChip(c.topic, "run")).join("");
+
+    d.cards.forEach((card, i) => {
+      setTimeout(() => {
+        addCard(card);
+        $("tasks2").innerHTML = d.cards.map((c, n) =>
+          taskChip(c.topic, n <= i ? "done" : "run")).join("");
+        if(i === d.cards.length - 1){
+          setStatus(d.cards.length + " topics sparked.");
+          $("goBtn").disabled = false;
+        }
+      }, 420 * (i + 1));
+    });
+  }, 500);
+}
+
+/* ============================================================
+   Lecture mode — project the question, withhold the answer.
+   ============================================================ */
+
+let lectureIdx = 0;
+const realCards = () => CARDS.filter(c => !c.__skipped);
+
+function openLecture(i){
+  const real = realCards();
+  if(!real.length){ setStatus("Generate some cards first."); return; }
+  lectureIdx = Math.max(0, Math.min(i || 0, real.length - 1));
+  $("lecture").classList.add("on");
+  paintLecture();
+}
+
+function paintLecture(){
+  const real = realCards();
+  const c = real[lectureIdx];
+  if(!c) return;
+  $("lk").textContent = c.topic;
+  $("lq").textContent = c.hook.question;
+  $("lsub").textContent = c.hook.reveal;
+  $("lsub").classList.remove("on");
+  $("lcount").textContent = (lectureIdx + 1) + " / " + real.length;
+}
+
+function closeLecture(){ $("lecture").classList.remove("on"); }
+
+function moveLecture(d){
+  const real = realCards();
+  if(!real.length) return;
+  lectureIdx = (lectureIdx + d + real.length) % real.length;
+  paintLecture();
+}
+
+/* ============================================================
+   Wiring
+   ============================================================ */
+
+$("goBtn").addEventListener("click", run);
+
+$("clearBtn").addEventListener("click", () => {
+  $("syllabus").value = ""; $("course").value = "";
+  resetFeed(); $("pipeline").classList.remove("on"); setStatus("");
+});
+
+document.querySelectorAll(".chip[data-demo]").forEach(b => {
+  b.addEventListener("click", () => {
+    const d = DEMOS[b.dataset.demo];
+    $("syllabus").value = d.syllabus;
+    $("course").value = d.course;
+    runDemo(b.dataset.demo);
+  });
+});
+
+$("exportBtn").addEventListener("click", () => {
+  const real = realCards();
+  if(!real.length){ setStatus("Nothing to export yet."); return; }
+  const head = "# " + ($("course").value.trim() || "Spark") + "\n\n" +
+    "_Curiosity-first openings, generated by Spark._\n\n";
+  const body = real.map((c, i) => cardToMarkdown(c, i)).join("\n---\n\n");
+  const blob = new Blob([head + body], {type:"text/markdown"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "spark-cards.md";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+$("lectureBtn").addEventListener("click", () => openLecture(0));
+$("lClose").addEventListener("click", closeLecture);
+$("lPrev").addEventListener("click", () => moveLecture(-1));
+$("lNext").addEventListener("click", () => moveLecture(1));
+$("lReveal").addEventListener("click", () => $("lsub").classList.toggle("on"));
+
+document.addEventListener("keydown", (e) => {
+  if(!$("lecture").classList.contains("on")) return;
+  if(e.key === "Escape") closeLecture();
+  if(e.key === "ArrowRight") moveLecture(1);
+  if(e.key === "ArrowLeft") moveLecture(-1);
+  if(e.key.toLowerCase() === "r") $("lsub").classList.toggle("on");
+});
+
+const savedTheme = localStorage.getItem("spark.theme");
+if(savedTheme) document.documentElement.dataset.theme = savedTheme;
+$("themeBtn").addEventListener("click", () => {
+  const cur = document.documentElement.dataset.theme;
+  const prefersDark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const next = cur ? (cur === "dark" ? "light" : "dark") : (prefersDark ? "light" : "dark");
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem("spark.theme", next);
+});
+</script>
+</body>
+</html>
