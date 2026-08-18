@@ -265,7 +265,7 @@ async function recordSpend(env, micros) {
 
 /* One call. Returns the parsed value plus what it cost in microdollars.
    `effort` is dropped for models that reject it (Haiku). */
-async function callOnce(env, { model, user, schema, maxTokens, effort }) {
+async function callOnce(env, { model, user, schema, maxTokens, effort, thinking }) {
   const output_config = { format: { type: "json_schema", schema } };
   if (effort && supportsEffort(model)) output_config.effort = effort;
 
@@ -284,6 +284,7 @@ async function callOnce(env, { model, user, schema, maxTokens, effort }) {
       // the cache and the rest read it at ~10% of input price.
       system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
       output_config,
+      ...(thinking ? { thinking } : {}),
       messages: [{ role: "user", content: user }]
     })
   });
@@ -310,6 +311,7 @@ async function callOnce(env, { model, user, schema, maxTokens, effort }) {
   if (data.stop_reason === "max_tokens") {
     const err = new Error("That topic produced too much output.");
     err.truncated = true;
+    err.micros = costMicros(model, data.usage); // really spent; must still be billed
     throw err;
   }
 
@@ -330,17 +332,39 @@ async function callOnce(env, { model, user, schema, maxTokens, effort }) {
   return { value: JSON.parse(block.text), micros };
 }
 
-/* Retries a truncated generation once at low effort, which cuts thinking spend
-   and reliably leaves room for the JSON. The first attempt's cost still counts
-   against the budget — it was really spent. */
+/* Adaptive thinking shares max_tokens with the answer, so a card can run out of
+   room mid-JSON. Observed live at roughly 1 in 5, and stochastic — the same topic
+   succeeds on a later attempt — so this walks down a ladder of progressively
+   tighter configurations rather than giving up:
+
+     1. the configured effort            — best quality
+     2. effort "low"                     — less thinking, usually enough
+     3. effort "low" + thinking disabled — output is bounded (~2k tokens
+                                           measured), so it cannot truncate
+
+   Every attempt's cost is charged to the budget; a truncated attempt really did
+   burn its full max_tokens, which is why it costs more than a card that works. */
 async function callClaude(env, opts) {
-  try {
-    return await callOnce(env, opts);
-  } catch (err) {
-    if (!err.truncated || opts.effort === "low") throw err;
-    console.log(JSON.stringify({ msg: "retrying truncated generation at low effort" }));
-    const retry = await callOnce(env, { ...opts, effort: "low" });
-    return { ...retry, micros: retry.micros + (err.micros || 0) };
+  const ladder = [
+    opts,
+    { ...opts, effort: "low" },
+    { ...opts, effort: "low", thinking: { type: "disabled" } }
+  ];
+
+  let spent = 0;
+  for (let i = 0; i < ladder.length; i++) {
+    try {
+      const out = await callOnce(env, ladder[i]);
+      return { ...out, micros: out.micros + spent };
+    } catch (err) {
+      spent += err.micros || 0;
+      const lastRung = i === ladder.length - 1;
+      if (!err.truncated || lastRung) {
+        err.micros = spent;
+        throw err;
+      }
+      console.log(JSON.stringify({ msg: "truncated; dropping to a tighter config", rung: i + 1 }));
+    }
   }
 }
 

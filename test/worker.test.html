@@ -312,14 +312,38 @@ function stubReq(path, body, origin){
   check("the retry drops to low effort to leave room for the JSON",
     calls[1].body.output_config.effort === "low", String(calls[1].body.output_config.effort));
 
-  // Both attempts truncate -> a clean error, and no infinite retry loop.
+  // Two truncations -> falls all the way to thinking-disabled, which cannot truncate.
   calls = [];
   responseQueue = [truncated(), truncated()];
   r = await hit("/api/spark", { topic:{ name:"TR2", gist:"g" } }, env);
   j = await r.json();
-  check("if the retry also truncates, the error surfaces cleanly",
+  check("two truncations fall through to the third rung and still succeed",
+    r.status === 200 && j.card.topic === "T", r.status + " " + JSON.stringify(j).slice(0,70));
+  check("the third rung disables thinking (output becomes bounded)",
+    calls[2] && calls[2].body.thinking && calls[2].body.thinking.type === "disabled",
+    JSON.stringify(calls[2] && calls[2].body.thinking));
+  check("earlier rungs do NOT disable thinking",
+    calls[0].body.thinking === undefined && calls[1].body.thinking === undefined, "unexpected thinking on rung 1/2");
+
+  // All three truncate -> clean error, no runaway loop.
+  calls = [];
+  responseQueue = [truncated(), truncated(), truncated()];
+  r = await hit("/api/spark", { topic:{ name:"TR3", gist:"g" } }, env);
+  j = await r.json();
+  check("if every rung truncates, the error surfaces cleanly",
     r.status === 502 && /too much output/i.test(j.error), r.status + " " + j.error);
-  check("it retries at most once (no runaway loop)", calls.length === 2, String(calls.length));
+  check("the ladder stops at three attempts (no runaway loop)", calls.length === 3, String(calls.length));
+
+  // A truncated attempt burned real tokens and must still be billed.
+  const envB = baseEnv();
+  calls = [];
+  responseQueue = [truncated()];
+  await hit("/api/spark", { topic:{ name:"TR4", gist:"g" } }, envB);
+  const billed = parseInt(await envB.SPARK_KV.get("spend:total"), 10);
+  // Stub costs on Sonnet 5 pricing: truncated attempt 162_000, successful card
+  // 1_002_000. Billing only the success would under-charge by the truncation.
+  check("a truncated attempt is still charged to the budget, on top of the retry",
+    billed === 1_164_000, billed + " microdollars (want 1164000 = 162000 + 1002000)");
   responseQueue = [];
 }
 
